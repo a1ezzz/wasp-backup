@@ -30,11 +30,13 @@ from wasp_backup.version import __status__
 from wasp_general.verify import verify_type
 from wasp_general.command.command import WCommandResult
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
+from wasp_general.crypto.aes import WAESMode
 
 from wasp_launcher.apps import WGuestAppCommandKit
 from wasp_launcher.host_apps.broker_commands import WBrokerCommand
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
+from wasp_backup.cipher import WBackupCipher
 
 
 class WBackupBrokerCommandKit(WGuestAppCommandKit):
@@ -48,6 +50,15 @@ class WBackupBrokerCommandKit(WGuestAppCommandKit):
 	@classmethod
 	def commands(cls):
 		return WBackupCommands.Backup(),
+
+
+def cipher_name_validation(cipher_name):
+	try:
+		if WAESMode.parse_cipher_name(cipher_name) is not None:
+			return True
+	except ValueError:
+		pass
+	return False
 
 
 class WBackupCommands:
@@ -112,6 +123,15 @@ by default', casting_helper=CompressionArgumentHelper()
 			WCommandArgumentDescriptor(
 				'password', meta_var='encryption_password',
 				help_info='password to encrypt backup. Backup is not encrypted by default'
+			),
+			WCommandArgumentDescriptor(
+				'cipher_algorithm', meta_var='algorithm_name',
+				help_info='cipher that will be used for encrypt (backup won\'nt be encrypted if \
+password wasn\'t set). It is "AES-256-CBC" by default',
+				casting_helper=WCommandArgumentDescriptor.StringArgumentCastingHelper(
+					validate_fn=cipher_name_validation
+				),
+				default_value='AES-256-CBC'
 			)
 		]
 
@@ -126,9 +146,15 @@ by default', casting_helper=CompressionArgumentHelper()
 			if 'compression' in command_arguments.keys():
 				compress_mode = command_arguments['compression']
 
+			cipher = None
+			if 'password' in command_arguments:
+				cipher = WBackupCipher(
+					command_arguments['cipher_algorithm'], command_arguments['password']
+				)
+
 			archiver = WLVMBackupTarArchiver(
 				command_arguments['output'], *command_arguments['input'], compress_mode=compress_mode,
-				sudo=command_arguments['sudo']
+				sudo=command_arguments['sudo'], cipher=cipher
 			)
 
 			snapshot_size = None
@@ -139,11 +165,15 @@ by default', casting_helper=CompressionArgumentHelper()
 			if 'snapshot-volume-size' in command_arguments.keys():
 				snapshot_mount_dir = command_arguments['snapshot-mount-dir']
 
-			#import threading
-			#threading.Thread(target=lambda: archiver.archive(
-			#	snapshot_force=command_arguments['force-snapshot'], snapshot_size=snapshot_size,
-			#	mount_directory=snapshot_mount_dir
-			#)).start()
+			import threading
+			def archiver_thread():
+				archiver.archive(
+					snapshot_force=command_arguments['force-snapshot'], snapshot_size=snapshot_size,
+					mount_directory=snapshot_mount_dir
+				)
+				archiver.write_meta()
+
+			threading.Thread(target=archiver_thread).start()
 
 			return WCommandResult(output=output)
 

@@ -21,6 +21,7 @@
 
 # TODO: document the code
 # TODO: write tests for the code
+# TODO: add encryption
 
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __author__, __version__, __credits__, __license__, __copyright__, __email__
@@ -29,32 +30,62 @@ from wasp_backup.version import __status__
 
 import hashlib
 import os
+import io
 import tarfile
 import json
 import uuid
 import tempfile
 from enum import Enum
 
+
 from wasp_general.verify import verify_type, verify_value
 from wasp_general.os.linux.lvm import WLogicalVolume
 from wasp_general.os.linux.mounts import WMountPoint
+from wasp_general.crypto.aes import WAESWriter
+from wasp_general.crypto.hash import WHash
 
 from wasp_launcher.apps import WAppsGlobals
+
+from wasp_backup.cipher import WBackupCipher
 
 
 class WBackupTarArchiver:
 
 	__meta_suffix__ = '.wb-meta'
+	#__default_hash_generator_name__ = 'SHA1'
+	__default_hash_generator_name__ = 'MD5'
 
 	class CompressMode(Enum):
 		gzip = 'gz'
 		bzip2 = 'bz2'
 
-	@verify_type(archive_path=str, backup_sources=str)
+	class HashCalculator(io.BufferedWriter):
+
+		@verify_type(hash_name=str)
+		def __init__(self, hash_name, raw):
+			io.BufferedWriter.__init__(self, raw)
+			self.__hash_name = hash_name
+			self.__hash_obj = WHash.generator(hash_name).new(b'')
+
+		@verify_type(b=bytes)
+		def write(self, b):
+			self.__hash_obj.update(b)
+			io.BufferedWriter.write(self,b)
+
+		def hash_name(self):
+			return self.__hash_name
+
+		def hexdigest(self):
+			return self.__hash_obj.hexdigest()
+
+	@verify_type(archive_path=str, backup_sources=str, cipher=(WBackupCipher, None))
 	@verify_value(archive_path=lambda x: len(x) > 0, backup_sources=lambda x: len(x) > 0)
-	def __init__(self, archive_path, *backup_sources, compress_mode=None):
+	def __init__(self, archive_path, *backup_sources, compress_mode=None, cipher=None, hash_name=None):
 		self.__archive_path = archive_path
 		self.__backup_sources = list(backup_sources)
+		self.__cipher = cipher
+		self.__hash_name = hash_name if hash_name is not None else self.__default_hash_generator_name__
+		self.__hash_calculator = None
 
 		self.__compress_mode = None
 		if compress_mode is not None and isinstance(compress_mode, WBackupTarArchiver.CompressMode) is False:
@@ -71,9 +102,15 @@ class WBackupTarArchiver:
 	def compress_mode(self):
 		return self.__compress_mode
 
+	def cipher(self):
+		return self.__cipher
+
+	def hash_name(self):
+		return self.__hash_name
+
 	def tar_mode(self):
 		compress_mode = self.compress_mode()
-		return 'w:%s' % (compress_mode if compress_mode is not None else '')
+		return 'w:%s' % (compress_mode.value if compress_mode is not None else '')
 
 	@classmethod
 	def _verbose_filter(cls, tarinfo):
@@ -82,12 +119,27 @@ class WBackupTarArchiver:
 
 	@verify_type(abs_path=bool)
 	def _archive(self, abs_path=True):
-		tar = tarfile.open(name=self.archive_path(), mode=self.tar_mode())
+		f_obj = open(self.archive_path(), 'wb')
+
+		cipher_writer = None
+		cipher = self.cipher()
+		if cipher is not None:
+			cipher_writer = WAESWriter(cipher.aes_cipher(), f_obj)
+
+		self.__hash_calculator = WBackupTarArchiver.HashCalculator(
+			self.hash_name(), cipher_writer if cipher_writer is not None else f_obj
+		)
+
+		tar = tarfile.open(fileobj=self.__hash_calculator, mode=self.tar_mode())
 		for entry in self.backup_sources():
 			if abs_path is True:
 				entry = os.path.abspath(entry)
 			tar.add(entry, recursive=True, filter=self._verbose_filter)
 		tar.close()
+		self.__hash_calculator.close()
+		if cipher_writer is not None:
+			cipher_writer.close()
+		f_obj.close()
 
 	def archive(self):
 		self._archive()
@@ -103,7 +155,13 @@ class WBackupTarArchiver:
 		return hash_fn.hexdigest()
 
 	def meta(self):
-		return {'md5sum': self._md5sum(self.archive_path())}
+		result = {}
+		if self.__hash_calculator is not None:
+			return{self.hash_name(): self.__hash_calculator.hexdigest()}
+		cipher = self.cipher()
+		if cipher is not None:
+			result.update(cipher.meta())
+		return result
 
 	def write_meta(self):
 		meta_file_name = self.archive_path() + self.__class__.__meta_suffix__
@@ -124,11 +182,11 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 	__default_snapshot_size__ = 0.1
 	__mount_directory_prefix__ = 'wasp-backup-'
 
-	@verify_type('paranoid', archive_path=str, backup_sources=str, compress_mode=WBackupTarArchiver.CompressMode)
+	@verify_type('paranoid', archive_path=str, backup_sources=str, compress_mode=(WBackupTarArchiver.CompressMode, None), cipher=(WBackupCipher, None))
 	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, backup_sources=lambda x: len(x) > 0)
 	@verify_type(sudo=bool)
-	def __init__(self, archive_path, *backup_sources, compress_mode=None, sudo=False):
-		WBackupTarArchiver.__init__(self, archive_path, *backup_sources, compress_mode=compress_mode)
+	def __init__(self, archive_path, *backup_sources, compress_mode=None, sudo=False, cipher=None):
+		WBackupTarArchiver.__init__(self, archive_path, *backup_sources, compress_mode=compress_mode, cipher=cipher)
 		self.__sudo = sudo
 		self.__logical_volume_uuid = None
 		self.__snapshot = False
@@ -236,3 +294,22 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 		meta['snapshot'] = self.__snapshot
 		meta['lv_uuid'] = self.__logical_volume_uuid if self.__logical_volume_uuid is not None else ''
 		return meta
+
+'''
+__openssl_mode_re__ = re.compile('aes-([0-9]+)-(.+)')
+bits, mode = __openssl_mode_re__.search(cipher.lower()).groups()
+key_size = int(int(bits) / 8)
+mode = 'AES-%s' % mode.upper()
+'''
+
+'''
+import hmac
+import hashlib
+import Crypto.Protocol.KDF
+fn = lambda x,y: hmac.new(x,msg=y,digestmod=hashlib.sha256).digest()
+salt = b'\x01\x02\x03\x04\x05\x06\x07\x08'
+Crypto.Protocol.KDF.PBKDF2('password', salt, prf=fn)
+
+echo -en password | nettle-pbkdf2 -i 1000 -l 16 --hex-salt 0102030405060708
+openssl enc -aes-256-cbc -d -in 1.tar.gz.aes -out 1.tar.gz -K "c057f2deac4cba660f5463b8346ee67961948a598e0f4f72e7ad46d2ffeecd39" -iv "4084a32c07fb808e8dfc679c3cde6480" -nosalt -nopad
+'''
