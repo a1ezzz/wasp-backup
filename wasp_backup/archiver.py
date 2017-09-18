@@ -52,7 +52,6 @@ from wasp_backup.cipher import WBackupCipher
 class WBackupTarArchiver:
 
 	__meta_suffix__ = '.wb-meta'
-	#__default_hash_generator_name__ = 'SHA1'
 	__default_hash_generator_name__ = 'MD5'
 
 	class CompressMode(Enum):
@@ -67,10 +66,11 @@ class WBackupTarArchiver:
 			self.__hash_name = hash_name
 			self.__hash_obj = WHash.generator(hash_name).new(b'')
 
-		@verify_type(b=bytes)
+		@verify_type(b=(bytes, memoryview))
 		def write(self, b):
-			self.__hash_obj.update(b)
-			io.BufferedWriter.write(self,b)
+			self.__hash_obj.update(bytes(b))
+			b = bytes(b)
+			return io.BufferedWriter.write(self, b)
 
 		def hash_name(self):
 			return self.__hash_name
@@ -119,26 +119,26 @@ class WBackupTarArchiver:
 
 	@verify_type(abs_path=bool)
 	def _archive(self, abs_path=True):
-		f_obj = open(self.archive_path(), 'wb')
+		f_obj = open(self.archive_path(), 'wb', buffering=0)
+
+		self.__hash_calculator = WBackupTarArchiver.HashCalculator(self.hash_name(), f_obj)
 
 		cipher_writer = None
 		cipher = self.cipher()
 		if cipher is not None:
-			cipher_writer = WAESWriter(cipher.aes_cipher(), f_obj)
+			cipher_writer = WAESWriter(cipher.aes_cipher(), self.__hash_calculator)
 
-		self.__hash_calculator = WBackupTarArchiver.HashCalculator(
-			self.hash_name(), cipher_writer if cipher_writer is not None else f_obj
-		)
-
-		tar = tarfile.open(fileobj=self.__hash_calculator, mode=self.tar_mode())
+		tar_fo = cipher_writer if cipher_writer is not None else f_obj
+		tar = tarfile.open(fileobj=tar_fo, mode=self.tar_mode())
 		for entry in self.backup_sources():
 			if abs_path is True:
 				entry = os.path.abspath(entry)
 			tar.add(entry, recursive=True, filter=self._verbose_filter)
+
 		tar.close()
-		self.__hash_calculator.close()
 		if cipher_writer is not None:
 			cipher_writer.close()
+		self.__hash_calculator.close()
 		f_obj.close()
 
 	def archive(self):
