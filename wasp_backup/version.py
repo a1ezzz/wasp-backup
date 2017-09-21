@@ -32,7 +32,8 @@ def revision():
 
 
 __author__ = "Ildar Gafurov"
-__version__ = ("0.0.0.dev%s" % revision())
+__numeric_version__ = '0.0.1.1'
+__version__ = ("%s.dev%s" % (__numeric_version__, revision()))
 __credits__ = ["Ildar Gafurov"]
 __license__ = "GNU Lesser General Public License v3"
 __copyright__ = "Copyright 2017, The wasp-backup"

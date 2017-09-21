@@ -1,6 +1,7 @@
 #!/bin/sh
 
-PACKAGE_DIR=`dirname $0`
+SCRIPT_DIR=`dirname $0`
+PACKAGE_DIR=`dirname $SCRIPT_DIR`
 cd $PACKAGE_DIR
 
 rm -rf docs/sphinx-html/* && rm -rf docs/sphinx/api/*
