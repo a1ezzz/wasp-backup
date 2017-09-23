@@ -1,0 +1,14 @@
+Source: wasp-backup
+Section: python
+Priority: optional
+Maintainer: Ildar Gafurov <dev@binblob.com>
+Build-Depends: debhelper (>=9), python3 (>=3.4), dh-virtualenv (>= 0.8)
+X-Python3-Version: >= 3.4
+Standards-Version: 3.9.5
+
+Package: wasp-backup
+Architecture: any
+Pre-Depends: dpkg (>= 1.16.1), python3.4 | python3.5 | python3.6 ${misc:Pre-Depends}
+Depends: python3-wasp-general, python3-wasp-launcher ${misc:Depends}
+Description: file backup application
+
