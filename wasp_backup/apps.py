@@ -32,16 +32,20 @@ from wasp_general.command.command import WCommandResult
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
 
-from wasp_launcher.apps import WGuestAppCommandKit
+from wasp_launcher.apps import WCommandKit
 from wasp_launcher.host_apps.broker_commands import WBrokerCommand
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
 from wasp_backup.cipher import WBackupCipher
 
 
-class WBackupBrokerCommandKit(WGuestAppCommandKit):
+class WBackupBrokerCommandKit(WCommandKit):
 
-	__registry_tag__ = 'com.binblob.wasp-backup.broker-commands'
+	__kit_name__ = 'com.binblob.wasp-backup.broker-commands'
+
+	@classmethod
+	def name(cls):
+		return cls.__kit_name__
 
 	@classmethod
 	def brief_description(cls):
@@ -166,6 +170,7 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 				snapshot_mount_dir = command_arguments['snapshot-mount-dir']
 
 			import threading
+
 			def archiver_thread():
 				archiver.archive(
 					snapshot_force=command_arguments['force-snapshot'], snapshot_size=snapshot_size,
