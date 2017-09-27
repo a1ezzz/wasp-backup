@@ -27,12 +27,14 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
+import traceback
+
 from wasp_general.verify import verify_type
 from wasp_general.command.command import WCommandResult
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
 
-from wasp_launcher.apps import WCommandKit
+from wasp_launcher.apps import WCommandKit, WAppsGlobals
 from wasp_launcher.host_apps.broker_commands import WBrokerCommand
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
@@ -166,17 +168,21 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 				snapshot_size = command_arguments['snapshot-volume-size']
 
 			snapshot_mount_dir = None
-			if 'snapshot-volume-size' in command_arguments.keys():
+			if 'snapshot-mount-dir' in command_arguments.keys():
 				snapshot_mount_dir = command_arguments['snapshot-mount-dir']
 
 			import threading
 
 			def archiver_thread():
-				archiver.archive(
-					snapshot_force=command_arguments['force-snapshot'], snapshot_size=snapshot_size,
-					mount_directory=snapshot_mount_dir
-				)
-				archiver.write_meta()
+				try:
+					archiver.archive(
+						snapshot_force=command_arguments['force-snapshot'], snapshot_size=snapshot_size,
+						mount_directory=snapshot_mount_dir
+					)
+					archiver.write_meta()
+				except Exception as e:
+					WAppsGlobals.log.error('Backup failed. Exception was raised: ' + str(e))
+					WAppsGlobals.log.error(traceback.format_exc())
 
 			threading.Thread(target=archiver_thread).start()
 
