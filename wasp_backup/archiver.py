@@ -97,7 +97,7 @@ class WBackupTarArchiver:
 		return self.__archive_path
 
 	def backup_sources(self):
-		return self.__backup_sources
+		return self.__backup_sources.copy()
 
 	def compress_mode(self):
 		return self.__compress_mode
@@ -261,7 +261,7 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 			mount_options.insert(0, 'ro')
 
 			WMountPoint.mount(
-				logical_volume.volume_path(), mount_directory, fs=mount_fs, options=mount_options,
+				snapshot_volume.volume_path(), mount_directory, fs=mount_fs, options=mount_options,
 				sudo=self.sudo()
 			)
 			directory_mounted = True
@@ -281,7 +281,7 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 			os.chdir(current_cwd)
 
 			if directory_mounted is True:
-				WMountPoint.umount(logical_volume.volume_path(), sudo=self.sudo())
+				WMountPoint.umount(snapshot_volume.volume_path(), sudo=self.sudo())
 
 			if remove_directory is True:
 				os.removedirs(mount_directory)
