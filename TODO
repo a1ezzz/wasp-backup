@@ -1,7 +1,8 @@
 
 TODO: 0. Write Code!
-TODO: 1. Make backup thread interactive and handle errors
-TODO: 2. Create one tar file that joins archive and meta instead of separate files
-TODO: 3. Make target file "splittable", so one backup may be split into several chunks
-TODO: 4. Create some scripts to decrypt/verify/... backup files
-TODO: 5. Think of creating differential backup which finds files by modification/change time and or by hash comparision
+TODO: 1. Create multiple scheduler "partitions"/instances?
+TODO: 2. Make backup thread interactive and handle errors
+TODO: 3. Create one tar file that joins archive and meta instead of separate files
+TODO: 4. Make target file "splittable", so one backup may be split into several chunks
+TODO: 5. Create some scripts to decrypt/verify/... backup files
+TODO: 6. Think of creating differential backup which finds files by modification/change time and or by hash comparision
