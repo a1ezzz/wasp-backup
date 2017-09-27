@@ -1,0 +1,7 @@
+
+# This priviliges allow to create LVM snapshot for backup
+
+Cmnd_Alias LVM	= /sbin/lvdisplay -c *, /sbin/vgdisplay -c *, /sbin/lvcreate *, /sbin/lvremove *
+Cmnd_Alias MOUNT = /bin/mount *, /bin/umount
+
+wasp_daemon	ALL = NOPASSWD: LVM, MOUNT
