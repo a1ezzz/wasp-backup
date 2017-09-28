@@ -33,9 +33,12 @@ from wasp_general.verify import verify_type
 from wasp_general.command.command import WCommandResult
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
+from wasp_general.task.scheduler.proto import WScheduledTask
+from wasp_general.task.scheduler.task_source import WInstantTaskSource
 
-from wasp_launcher.apps import WCommandKit, WAppsGlobals
+from wasp_launcher.apps import WCommandKit, WAppsGlobals, WGuestApp, WGuestAppRegistry
 from wasp_launcher.host_apps.broker_commands import WBrokerCommand
+from wasp_launcher.host_apps.scheduler import WLauncherTaskSource
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
 from wasp_backup.cipher import WBackupCipher
@@ -56,6 +59,49 @@ class WBackupBrokerCommandKit(WCommandKit):
 	@classmethod
 	def commands(cls):
 		return WBackupCommands.Backup(),
+
+
+class WBackupSchedulerTaskSource(WGuestApp):
+
+	class InstantTaskSource(WInstantTaskSource, WLauncherTaskSource):
+
+		__task_source_name__ = 'com.binblob.wasp-backup.scheduler.sources.instant_source'
+
+		def __init__(self, scheduler):
+			WInstantTaskSource.__init__(self, scheduler, on_drop_callback=self.on_drop)
+			WLauncherTaskSource.__init__(self)
+			self.__scheduler = scheduler
+
+		def name(self):
+			return self.__task_source_name__
+
+		def description(self):
+			return 'Backup tasks from broker'
+
+		def add_task(self, task):
+			WInstantTaskSource.add_task(self, task)
+			self.__scheduler.update(task_source=self)
+
+		@classmethod
+		def on_drop(cls):
+			WAppsGlobals.log.error('Some task was dropped')
+
+	def __init__(self):
+		WGuestApp.__init__(self)
+		self.__instant_task_source = None
+
+	__registry_tag__ = 'com.binblob.wasp-backup.scheduler.sources'
+
+	def start(self):
+		instance = WAppsGlobals.scheduler.instance('com.binblob.wasp-backup')
+		if instance is None:
+			WAppsGlobals.log.error('Backup scheduler instance not found. Tasks will not be able to start')
+			return
+		self.__instant_task_source = WBackupSchedulerTaskSource.InstantTaskSource(instance)
+		instance.add_task_source(self.__instant_task_source)
+
+	def instant_task_source(self):
+		return self.__instant_task_source
 
 
 def cipher_name_validation(cipher_name):
@@ -90,6 +136,32 @@ class WBackupCommands:
 					return
 				else:
 					raise ValueError('Invalid compression value')
+
+		class SchedulerTask(WScheduledTask):
+
+			__thread_name_suffix__ = 'WaspBackupBrokerTask-'
+
+			def __init__(self, archiver, snapshot_force, snapshot_size, mount_directory):
+				WScheduledTask.__init__(self, thread_name_suffix=self.__thread_name_suffix__)
+				self.__archiver = archiver
+				self.__snapshot_force = snapshot_force
+				self.__snapshot_size = snapshot_size
+				self.__mount_directory = mount_directory
+
+			def thread_started(self):
+				try:
+					self.__archiver.archive(
+						snapshot_force=self.__snapshot_force,
+						snapshot_size=self.__snapshot_size,
+						mount_directory=self.__mount_directory
+					)
+					self.__archiver.write_meta()
+				except Exception as e:
+					WAppsGlobals.log.error('Backup failed. Exception was raised: ' + str(e))
+					WAppsGlobals.log.error(traceback.format_exc())
+
+			def thread_stopped(self):
+				pass
 
 		__arguments__ = [
 			WCommandArgumentDescriptor(
@@ -171,20 +243,17 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 			if 'snapshot-mount-dir' in command_arguments.keys():
 				snapshot_mount_dir = command_arguments['snapshot-mount-dir']
 
-			import threading
+			task_source_app = WGuestAppRegistry.__registry_storage__.started_task(
+				WBackupSchedulerTaskSource.__registry_tag__
+			)
+			if task_source_app is None:
+				return WCommandResult(
+					output='Unable to connect to scheduler. Command rejected', error=1
+				)
 
-			def archiver_thread():
-				try:
-					archiver.archive(
-						snapshot_force=command_arguments['force-snapshot'], snapshot_size=snapshot_size,
-						mount_directory=snapshot_mount_dir
-					)
-					archiver.write_meta()
-				except Exception as e:
-					WAppsGlobals.log.error('Backup failed. Exception was raised: ' + str(e))
-					WAppsGlobals.log.error(traceback.format_exc())
-
-			threading.Thread(target=archiver_thread).start()
+			task_source_app.instant_task_source().add_task(WBackupCommands.Backup.SchedulerTask(
+				archiver, command_arguments['force-snapshot'], snapshot_size, snapshot_mount_dir
+			))
 
 			return WCommandResult(output=output)
 
