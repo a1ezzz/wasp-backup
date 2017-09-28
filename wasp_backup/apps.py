@@ -36,9 +36,9 @@ from wasp_general.crypto.aes import WAESMode
 from wasp_general.task.scheduler.proto import WScheduledTask
 from wasp_general.task.scheduler.task_source import WInstantTaskSource
 
-from wasp_launcher.apps import WCommandKit, WAppsGlobals, WGuestApp, WGuestAppRegistry
-from wasp_launcher.host_apps.broker_commands import WBrokerCommand
-from wasp_launcher.host_apps.scheduler import WLauncherTaskSource
+from wasp_launcher.core import WCommandKit, WAppsGlobals, WSyncApp
+from wasp_launcher.apps.broker_commands import WBrokerCommand
+from wasp_launcher.apps.scheduler import WLauncherTaskSource
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
 from wasp_backup.cipher import WBackupCipher
@@ -46,14 +46,10 @@ from wasp_backup.cipher import WBackupCipher
 
 class WBackupBrokerCommandKit(WCommandKit):
 
-	__kit_name__ = 'com.binblob.wasp-backup.broker-commands'
+	__registry_tag__ = 'com.binblob.wasp-backup.broker-commands'
 
 	@classmethod
-	def name(cls):
-		return cls.__kit_name__
-
-	@classmethod
-	def brief_description(cls):
+	def description(cls):
 		return 'backup creation/restoring commands'
 
 	@classmethod
@@ -61,7 +57,7 @@ class WBackupBrokerCommandKit(WCommandKit):
 		return WBackupCommands.Backup(),
 
 
-class WBackupSchedulerTaskSource(WGuestApp):
+class WBackupSchedulerTaskSource(WSyncApp):
 
 	class InstantTaskSource(WInstantTaskSource, WLauncherTaskSource):
 
@@ -87,7 +83,7 @@ class WBackupSchedulerTaskSource(WGuestApp):
 			WAppsGlobals.log.error('Some task was dropped')
 
 	def __init__(self):
-		WGuestApp.__init__(self)
+		WSyncApp.__init__(self)
 		self.__instant_task_source = None
 
 	__registry_tag__ = 'com.binblob.wasp-backup.scheduler.sources'
@@ -243,9 +239,12 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 			if 'snapshot-mount-dir' in command_arguments.keys():
 				snapshot_mount_dir = command_arguments['snapshot-mount-dir']
 
-			task_source_app = WGuestAppRegistry.__registry_storage__.started_task(
-				WBackupSchedulerTaskSource.__registry_tag__
-			)
+			task_source_app = None
+			for app in WAppsGlobals.started_apps:
+				if app.__registry_tag__ == WBackupSchedulerTaskSource.__registry_tag__:
+					task_source_app = app
+					break
+
 			if task_source_app is None:
 				return WCommandResult(
 					output='Unable to connect to scheduler. Command rejected', error=1

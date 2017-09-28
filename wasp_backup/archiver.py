@@ -44,7 +44,7 @@ from wasp_general.os.linux.mounts import WMountPoint
 from wasp_general.crypto.aes import WAESWriter
 from wasp_general.crypto.hash import WHash
 
-from wasp_launcher.apps import WAppsGlobals
+from wasp_launcher.core import WAppsGlobals
 
 from wasp_backup.cipher import WBackupCipher
 
