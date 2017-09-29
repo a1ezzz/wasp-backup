@@ -33,12 +33,11 @@ from wasp_general.verify import verify_type
 from wasp_general.command.command import WCommandResult
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
-from wasp_general.task.scheduler.proto import WScheduledTask
 from wasp_general.task.scheduler.task_source import WInstantTaskSource
 
-from wasp_launcher.core import WCommandKit, WAppsGlobals, WSyncApp, WSchedulerTaskSourceInstaller
+from wasp_launcher.core import WCommandKit, WAppsGlobals, WSchedulerTaskSourceInstaller, WLauncherTaskSource
+from wasp_launcher.core import WLauncherScheduleTask
 from wasp_launcher.apps.broker_commands import WBrokerCommand
-from wasp_launcher.apps.scheduler import WLauncherTaskSource, WLauncherScheduledTask
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
 from wasp_backup.cipher import WBackupCipher
@@ -81,8 +80,8 @@ class WBackupSchedulerInstaller(WSchedulerTaskSourceInstaller):
 			self.__scheduler.update(task_source=self)
 
 		@classmethod
-		def on_drop(cls):
-			WAppsGlobals.log.error('Some task was dropped')
+		def on_drop(cls, task):
+			WAppsGlobals.log.error('Some task was dropped: ' + str(task))
 
 	__registry_tag__ = 'com.binblob.wasp-backup.scheduler.sources'
 
@@ -127,14 +126,13 @@ class WBackupCommands:
 				else:
 					raise ValueError('Invalid compression value')
 
-		class SchedulerTask(WLauncherScheduledTask):
+		class SchedulerTask(WLauncherScheduleTask):
 
-			__thread_name_suffix__ = 'WaspBackupBrokerTask'
 			__task_name__ = 'archiving task'
 			__task_description_prefix__ = 'files that are archiving: '
 
 			def __init__(self, archiver, snapshot_force, snapshot_size, mount_directory):
-				WLauncherScheduledTask.__init__(self, thread_name_suffix=self.__thread_name_suffix__)
+				WLauncherScheduleTask.__init__(self)
 				self.__archiver = archiver
 				self.__snapshot_force = snapshot_force
 				self.__snapshot_size = snapshot_size
@@ -264,8 +262,8 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 				)
 
 			uid = None
-			for task in task_source.scheduler().running_tasks():
-				if task.task_schedule().task() == scheduler_task:
+			for task in task_source.scheduler_service().running_records():
+				if task.record().task() == scheduler_task:
 					uid = task.task_uid()
 
 			if uid is not None:
