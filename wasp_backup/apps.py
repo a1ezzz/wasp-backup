@@ -36,7 +36,7 @@ from wasp_general.crypto.aes import WAESMode
 from wasp_general.task.scheduler.proto import WScheduledTask
 from wasp_general.task.scheduler.task_source import WInstantTaskSource
 
-from wasp_launcher.core import WCommandKit, WAppsGlobals, WSyncApp
+from wasp_launcher.core import WCommandKit, WAppsGlobals, WSyncApp, WSchedulerTaskSourceInstaller
 from wasp_launcher.apps.broker_commands import WBrokerCommand
 from wasp_launcher.apps.scheduler import WLauncherTaskSource
 
@@ -57,7 +57,9 @@ class WBackupBrokerCommandKit(WCommandKit):
 		return WBackupCommands.Backup(),
 
 
-class WBackupSchedulerTaskSource(WSyncApp):
+class WBackupSchedulerInstaller(WSchedulerTaskSourceInstaller):
+
+	__scheduler_instance__ = 'com.binblob.wasp-backup'
 
 	class InstantTaskSource(WInstantTaskSource, WLauncherTaskSource):
 
@@ -82,22 +84,10 @@ class WBackupSchedulerTaskSource(WSyncApp):
 		def on_drop(cls):
 			WAppsGlobals.log.error('Some task was dropped')
 
-	def __init__(self):
-		WSyncApp.__init__(self)
-		self.__instant_task_source = None
-
 	__registry_tag__ = 'com.binblob.wasp-backup.scheduler.sources'
 
-	def start(self):
-		instance = WAppsGlobals.scheduler.instance('com.binblob.wasp-backup')
-		if instance is None:
-			WAppsGlobals.log.error('Backup scheduler instance not found. Tasks will not be able to start')
-			return
-		self.__instant_task_source = WBackupSchedulerTaskSource.InstantTaskSource(instance)
-		instance.add_task_source(self.__instant_task_source)
-
-	def instant_task_source(self):
-		return self.__instant_task_source
+	def sources(self):
+		return WBackupSchedulerInstaller.InstantTaskSource,
 
 
 def cipher_name_validation(cipher_name):
@@ -110,6 +100,10 @@ def cipher_name_validation(cipher_name):
 
 
 class WBackupCommands:
+
+	__dependency__ = [
+		'com.binblob.wasp-backup.scheduler.sources'
+	]
 
 	class Backup(WBrokerCommand):
 
@@ -239,18 +233,17 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 			if 'snapshot-mount-dir' in command_arguments.keys():
 				snapshot_mount_dir = command_arguments['snapshot-mount-dir']
 
-			task_source_app = None
-			for app in WAppsGlobals.started_apps:
-				if app.__registry_tag__ == WBackupSchedulerTaskSource.__registry_tag__:
-					task_source_app = app
-					break
+			task_source = WAppsGlobals.scheduler.task_source(
+				WBackupSchedulerInstaller.InstantTaskSource.__task_source_name__,
+				WBackupSchedulerInstaller.__scheduler_instance__
+			)
 
-			if task_source_app is None:
+			if task_source is None:
 				return WCommandResult(
-					output='Unable to connect to scheduler. Command rejected', error=1
+					output='Unable to find suitable scheduler. Command rejected', error=1
 				)
 
-			task_source_app.instant_task_source().add_task(WBackupCommands.Backup.SchedulerTask(
+			task_source.add_task(WBackupCommands.Backup.SchedulerTask(
 				archiver, command_arguments['force-snapshot'], snapshot_size, snapshot_mount_dir
 			))
 
