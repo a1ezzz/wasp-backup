@@ -38,7 +38,7 @@ from wasp_general.task.scheduler.task_source import WInstantTaskSource
 
 from wasp_launcher.core import WCommandKit, WAppsGlobals, WSyncApp, WSchedulerTaskSourceInstaller
 from wasp_launcher.apps.broker_commands import WBrokerCommand
-from wasp_launcher.apps.scheduler import WLauncherTaskSource
+from wasp_launcher.apps.scheduler import WLauncherTaskSource, WLauncherScheduledTask
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
 from wasp_backup.cipher import WBackupCipher
@@ -127,12 +127,14 @@ class WBackupCommands:
 				else:
 					raise ValueError('Invalid compression value')
 
-		class SchedulerTask(WScheduledTask):
+		class SchedulerTask(WLauncherScheduledTask):
 
-			__thread_name_suffix__ = 'WaspBackupBrokerTask-'
+			__thread_name_suffix__ = 'WaspBackupBrokerTask'
+			__task_name__ = 'archiving task'
+			__task_description_prefix__ = 'files that are archiving: '
 
 			def __init__(self, archiver, snapshot_force, snapshot_size, mount_directory):
-				WScheduledTask.__init__(self, thread_name_suffix=self.__thread_name_suffix__)
+				WLauncherScheduledTask.__init__(self, thread_name_suffix=self.__thread_name_suffix__)
 				self.__archiver = archiver
 				self.__snapshot_force = snapshot_force
 				self.__snapshot_size = snapshot_size
@@ -152,6 +154,13 @@ class WBackupCommands:
 
 			def thread_stopped(self):
 				pass
+
+			def name(self):
+				return self.__task_name__
+
+			def description(self):
+				return self.__task_description_prefix__ + (', '.join(self.__archiver.backup_sources()))
+
 
 		__arguments__ = [
 			WCommandArgumentDescriptor(
@@ -203,13 +212,12 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 			)
 		]
 
+		__scheduler_task_timeout__ = 3
+
 		def __init__(self):
 			WBrokerCommand.__init__(self, 'backup', *WBackupCommands.Backup.__arguments__)
 
 		def _exec(self, command_arguments):
-			import datetime
-			output = 'backup. now - ' + str(datetime.datetime.now()) + ': ' + str(command_arguments)
-
 			compress_mode = None
 			if 'compression' in command_arguments.keys():
 				compress_mode = command_arguments['compression']
@@ -243,11 +251,27 @@ password wasn\'t set). It is "AES-256-CBC" by default',
 					output='Unable to find suitable scheduler. Command rejected', error=1
 				)
 
-			task_source.add_task(WBackupCommands.Backup.SchedulerTask(
+			scheduler_task = WBackupCommands.Backup.SchedulerTask(
 				archiver, command_arguments['force-snapshot'], snapshot_size, snapshot_mount_dir
-			))
+			)
+			task_source.add_task(scheduler_task)
 
-			return WCommandResult(output=output)
+			if scheduler_task.start_event().wait(self.__scheduler_task_timeout__) is False:
+				return WCommandResult(
+					output='Scheduler is busy at the moment. Backup task is registered and waits '
+					'for the scheduler',
+					error=1
+				)
+
+			uid = None
+			for task in task_source.scheduler().running_tasks():
+				if task.task_schedule().task() == scheduler_task:
+					uid = task.task_uid()
+
+			if uid is not None:
+				return WCommandResult(output='Backup task is running. Task uid: %s' % str(uid))
+			else:
+				return WCommandResult(output='Backup seems to be finished. Really fast!')
 
 		def brief_description(self):
 			return 'backup data'
