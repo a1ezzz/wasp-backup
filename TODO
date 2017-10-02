@@ -1,6 +1,6 @@
 
 TODO: 0. Write Code!
-TODO: 1. Make backup thread interactive and handle errors
+TODO: 1. Make backup thread interactive and handle errors and make it stoppable
 TODO: 2. Create one tar file that joins archive and meta instead of separate files
 TODO: 3. Make target file "splittable", so one backup may be split into several chunks
 TODO: 4. Create some scripts to decrypt/verify/... backup files

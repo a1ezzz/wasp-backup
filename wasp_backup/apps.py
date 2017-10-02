@@ -35,8 +35,8 @@ from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
 from wasp_general.task.scheduler.task_source import WInstantTaskSource
 
-from wasp_launcher.core import WCommandKit, WAppsGlobals, WSchedulerTaskSourceInstaller, WLauncherTaskSource
-from wasp_launcher.core import WLauncherScheduleTask
+from wasp_launcher.core import WCommandKit, WAppsGlobals
+from wasp_launcher.core_scheduler import WLauncherScheduleTask, WSchedulerTaskSourceInstaller, WLauncherTaskSource
 from wasp_launcher.apps.broker_commands import WBrokerCommand
 
 from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
@@ -151,7 +151,10 @@ class WBackupCommands:
 					WAppsGlobals.log.error(traceback.format_exc())
 
 			def thread_stopped(self):
-				pass
+				WLauncherScheduleTask.thread_stopped(self)
+
+			def thread_exception(self, raised_exception):
+				WLauncherScheduleTask.thread_exception(self, raised_exception)
 
 			def name(self):
 				return self.__task_name__
