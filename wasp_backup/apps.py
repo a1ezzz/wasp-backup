@@ -140,12 +140,12 @@ class WBackupCommands:
 
 			def thread_started(self):
 				try:
+					self.__archiver.stop_event(self.stop_event())
 					self.__archiver.archive(
 						snapshot_force=self.__snapshot_force,
 						snapshot_size=self.__snapshot_size,
 						mount_directory=self.__mount_directory
 					)
-					self.__archiver.write_meta()
 				except Exception as e:
 					WAppsGlobals.log.error('Backup failed. Exception was raised: ' + str(e))
 					WAppsGlobals.log.error(traceback.format_exc())
