@@ -245,7 +245,8 @@ class WBackupTarArchiver:
 	@verify_type(abs_path=bool)
 	def _archive(self, abs_path=True):
 
-		backup_tar = WTarArchivePatcher(self.archive_path(), inside_archive_name=self.inside_archive_name())
+		archive_path = self.archive_path()
+		backup_tar = WTarArchivePatcher(archive_path, inside_archive_name=self.inside_archive_name())
 
 		chain = [
 			backup_tar,
@@ -268,13 +269,17 @@ class WBackupTarArchiver:
 				if abs_path is True:
 					entry = os.path.abspath(entry)
 				tar.add(entry, recursive=True, filter=self._verbose_filter)
+		except Exception:
+			os.unlink(archive_path)
+			WAppsGlobals.log.error('Unable to create archive "%s". Changes discarded' % archive_path)
+			raise
 		finally:
 			self.__writer_chain.flush()
 			self.__writer_chain.close()
 
-		WAppsGlobals.log.debug('Archive "%s" was created successfully. Patching...' % self.archive_path())
+		WAppsGlobals.log.debug('Archive "%s" was created successfully. Patching...' % archive_path)
 		backup_tar.patch(self.meta())
-		WAppsGlobals.log.debug('Archive "%s" was successfully patched' % self.archive_path())
+		WAppsGlobals.log.debug('Archive "%s" was successfully patched' % archive_path)
 
 	def archive(self):
 		self._archive()

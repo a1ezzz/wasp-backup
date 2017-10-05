@@ -139,22 +139,12 @@ class WBackupCommands:
 				self.__mount_directory = mount_directory
 
 			def thread_started(self):
-				try:
-					self.__archiver.stop_event(self.stop_event())
-					self.__archiver.archive(
-						snapshot_force=self.__snapshot_force,
-						snapshot_size=self.__snapshot_size,
-						mount_directory=self.__mount_directory
-					)
-				except Exception as e:
-					WAppsGlobals.log.error('Backup failed. Exception was raised: ' + str(e))
-					WAppsGlobals.log.error(traceback.format_exc())
-
-			def thread_stopped(self):
-				WLauncherScheduleTask.thread_stopped(self)
-
-			def thread_exception(self, raised_exception):
-				WLauncherScheduleTask.thread_exception(self, raised_exception)
+				self.__archiver.stop_event(self.stop_event())
+				self.__archiver.archive(
+					snapshot_force=self.__snapshot_force,
+					snapshot_size=self.__snapshot_size,
+					mount_directory=self.__mount_directory
+				)
 
 			def name(self):
 				return self.__task_name__
