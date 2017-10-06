@@ -1,6 +1,6 @@
 
 TODO: 0. Write Code!
-TODO: 1. Make backup thread interactive and handle errors and make it stoppable
+TODO: 1. Make backup thread interactive
 TODO: 2. Make target file "splittable", so one backup may be split into several chunks
 TODO: 3. Create some scripts to decrypt/verify/... backup files
 TODO: 4. Think of creating differential backup which finds files by modification/change time and or by hash comparision
