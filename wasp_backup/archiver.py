@@ -33,8 +33,11 @@ import tarfile
 import json
 import uuid
 import tempfile
+import time
+import grp
+import pwd
 from enum import Enum
-
+from datetime import datetime
 
 from wasp_general.verify import verify_type, verify_value
 from wasp_general.os.linux.lvm import WLogicalVolume
@@ -76,6 +79,7 @@ class WTarArchivePatcher(io.BufferedWriter):
 
 	def __init__(self, archive_path, inside_archive_name, meta_name=None):
 		io.BufferedWriter.__init__(self, open(archive_path, mode='wb', buffering=0))
+		self.__inside_archive_size = 0
 		self.__archive_path = archive_path
 		self.__inside_archive_name = inside_archive_name
 		self.__meta_name = meta_name if meta_name is not None else self.__default_meta_name__
@@ -91,27 +95,33 @@ class WTarArchivePatcher(io.BufferedWriter):
 	def meta_name(self):
 		return self.__meta_name
 
+	def write(self, b):
+		self.__inside_archive_size += len(b)
+		return io.BufferedWriter.write(self, b)
+
+	def inside_archive_padding(self):
+		archive_padding_size = self.record_size(self.__inside_archive_size - tarfile.BLOCKSIZE)
+		return archive_padding_size - (self.__inside_archive_size - tarfile.BLOCKSIZE)
+
 	def patch(self, meta_data):
 		if self.closed is False:
 			raise RuntimeError('!')
 
-		original_archive_size = os.stat(self.archive_path()).st_size
-		archive_padding_size = self.record_size(original_archive_size - tarfile.BLOCKSIZE)
-		delta = archive_padding_size - (original_archive_size - tarfile.BLOCKSIZE)
-		result_archive_size = original_archive_size + delta
-		inside_archive_header = self.tar_header(self.inside_archive_name(), size=archive_padding_size)
+		result_archive_size = os.stat(self.archive_path()).st_size
+		inside_archive_size = result_archive_size - tarfile.BLOCKSIZE
+		if inside_archive_size != self.record_size(inside_archive_size):
+			raise RuntimeError('Logic error!')
+		inside_archive_header = self.tar_header(self.inside_archive_name(), size=inside_archive_size)
 
 		f = open(self.archive_path(), 'rb+')
 		f.seek(0, os.SEEK_SET)
 		f.write(inside_archive_header)
 
-		f.seek(0, os.SEEK_END)
-		f.write(self.padding(delta))
-
 		json_data = json.dumps(meta_data).encode()
 		meta_header = self.tar_header(self.meta_name(), size=len(json_data))
 		result_archive_size += len(meta_header)
 
+		f.seek(0, os.SEEK_END)
 		f.write(meta_header)
 		f.write(json_data)
 
@@ -132,6 +142,14 @@ class WTarArchivePatcher(io.BufferedWriter):
 		tar_header = tarfile.TarInfo(name=name)
 		if size is not None:
 			tar_header.size = size
+		tar_header.mtime = time.mktime(datetime.now().timetuple())
+		tar_header.mode = int('660', base=8)
+		tar_header.type = tarfile.REGTYPE
+		tar_header.uid = os.getuid()
+		tar_header.gid = os.getgid()
+		tar_header.uname = pwd.getpwuid(tar_header.uid).pw_name
+		tar_header.gname = grp.getgrgid(tar_header.gid).gr_name
+
 		return tar_header.tobuf()
 
 	@classmethod
@@ -269,6 +287,10 @@ class WBackupTarArchiver:
 				if abs_path is True:
 					entry = os.path.abspath(entry)
 				tar.add(entry, recursive=True, filter=self._verbose_filter)
+
+			self.__writer_chain.flush()
+			self.__writer_chain.write(backup_tar.padding(backup_tar.inside_archive_padding()))
+
 		except Exception:
 			os.unlink(archive_path)
 			WAppsGlobals.log.error('Unable to create archive "%s". Changes discarded' % archive_path)
