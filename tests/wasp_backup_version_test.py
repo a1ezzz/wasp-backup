@@ -9,7 +9,7 @@ from wasp_backup.version import revision
 
 @pytest.fixture()
 def cwd(request):
-	curdir = os.path.curdir
+	curdir = os.getcwd()
 
 	def fin():
 		os.chdir(curdir)
