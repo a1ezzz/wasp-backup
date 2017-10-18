@@ -27,26 +27,22 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
-import io
 import os
 import tarfile
-import json
 import uuid
 import tempfile
-import time
-import grp
-import pwd
-from enum import Enum
-from datetime import datetime
 
 from wasp_general.verify import verify_type, verify_value
 from wasp_general.os.linux.lvm import WLogicalVolume
 from wasp_general.os.linux.mounts import WMountPoint
-from wasp_general.io import WAESWriter, WHashCalculationWriter, WWriterChainLink, WWriterChain, WResponsiveWriter
+from wasp_general.io import WWriterChainLink, WResponsiveWriter
 
 from wasp_launcher.core import WAppsGlobals
 
 from wasp_backup.cipher import WBackupCipher
+from wasp_backup.core import WBackupMeta
+from wasp_backup.io import WTarArchivePatcher, WArchiverThrottling, WArchiverHashCalculator, WArchiverAESCipher
+from wasp_backup.io import WArchiverChain
 
 
 """
@@ -73,160 +69,24 @@ archive meta information -------------------------------|     (may be automatic 
 """
 
 
-class WTarArchivePatcher(io.BufferedWriter):
-
-	__default_meta_name__ = 'meta.json'
-
-	def __init__(self, archive_path, inside_archive_name, meta_name=None):
-		io.BufferedWriter.__init__(self, open(archive_path, mode='wb', buffering=0))
-		self.__inside_archive_size = 0
-		self.__archive_path = archive_path
-		self.__inside_archive_name = inside_archive_name
-		self.__meta_name = meta_name if meta_name is not None else self.__default_meta_name__
-
-		self.write(self.tar_header(self.inside_archive_name()))
-
-	def archive_path(self):
-		return self.__archive_path
-
-	def inside_archive_name(self):
-		return self.__inside_archive_name
-
-	def meta_name(self):
-		return self.__meta_name
-
-	def write(self, b):
-		self.__inside_archive_size += len(b)
-		return io.BufferedWriter.write(self, b)
-
-	def inside_archive_padding(self):
-		archive_padding_size = self.record_size(self.__inside_archive_size - tarfile.BLOCKSIZE)
-		return archive_padding_size - (self.__inside_archive_size - tarfile.BLOCKSIZE)
-
-	def patch(self, meta_data):
-		if self.closed is False:
-			raise RuntimeError('!')
-
-		result_archive_size = os.stat(self.archive_path()).st_size
-		inside_archive_size = result_archive_size - tarfile.BLOCKSIZE
-		if inside_archive_size != self.record_size(inside_archive_size):
-			raise RuntimeError('Logic error!')
-		inside_archive_header = self.tar_header(self.inside_archive_name(), size=inside_archive_size)
-
-		f = open(self.archive_path(), 'rb+')
-		f.seek(0, os.SEEK_SET)
-		f.write(inside_archive_header)
-
-		json_data = json.dumps(meta_data).encode()
-		meta_header = self.tar_header(self.meta_name(), size=len(json_data))
-		result_archive_size += len(meta_header)
-
-		f.seek(0, os.SEEK_END)
-		f.write(meta_header)
-		f.write(json_data)
-
-		meta_padding = self.block_size(len(json_data))
-		delta = meta_padding - len(json_data)
-		result_archive_size += delta
-		f.write(self.padding(delta))
-
-		archive_end_padding = tarfile.BLOCKSIZE * 2
-		result_archive_size += archive_end_padding
-		f.write(self.padding(archive_end_padding))
-
-		f.write(self.padding(self.record_size(result_archive_size)))
-		f.close()
-
-	@classmethod
-	def tar_header(cls, name, size=None):
-		tar_header = tarfile.TarInfo(name=name)
-		if size is not None:
-			tar_header.size = size
-		tar_header.mtime = time.mktime(datetime.now().timetuple())
-		tar_header.mode = int('660', base=8)
-		tar_header.type = tarfile.REGTYPE
-		tar_header.uid = os.getuid()
-		tar_header.gid = os.getgid()
-		tar_header.uname = pwd.getpwuid(tar_header.uid).pw_name
-		tar_header.gname = grp.getgrgid(tar_header.gid).gr_name
-
-		return tar_header.tobuf()
-
-	@classmethod
-	def align_size(cls, size, allign_size):
-		result = divmod(size, allign_size)
-		return (result[0] if result[1] == 0 else (result[0] + 1)) * allign_size
-
-	@classmethod
-	def record_size(cls, size):
-		return cls.align_size(size, tarfile.RECORDSIZE)
-
-	@classmethod
-	def block_size(cls, size):
-		return cls.align_size(size, tarfile.BLOCKSIZE)
-
-	@classmethod
-	def padding(cls, padding_size):
-		return tarfile.NUL * padding_size if padding_size > 0 else b''
-
-
-class WArchiverMeta:
-
-	def meta(self):
-		return {}
-
-
-class WArchiverHashCalculator(WHashCalculationWriter, WArchiverMeta):
-
-	def meta(self):
-		return {self.hash_name(): self.hexdigest()}
-
-
-class WArchiverAESCipher(WAESWriter, WArchiverMeta):
-
-	def __init__(self, raw, cipher):
-		WAESWriter.__init__(self, raw, cipher.aes_cipher())
-		WArchiverMeta.__init__(self)
-		self.__meta = cipher.meta()
-
-	def meta(self):
-		return self.__meta
-
-
-class WArchiverChain(WWriterChain):
-
-	def meta(self):
-		result = {}
-		for link in self:
-			if isinstance(link, WArchiverMeta) is True:
-				result.update(link.meta())
-		return result
-
-
 class WBackupTarArchiver:
 
-	__meta_suffix__ = '.wb-meta'
-	__default_hash_generator_name__ = 'MD5'
-
-	class CompressMode(Enum):
-		gzip = 'gz'
-		bzip2 = 'bz2'
-
 	@verify_type(archive_path=str, backup_sources=str, cipher=(WBackupCipher, None))
+	@verify_type(compression_mode=(WBackupMeta.Archive.CompressionMode, None), io_write_rate=(float, int, None))
 	@verify_value(archive_path=lambda x: len(x) > 0, backup_sources=lambda x: len(x) > 0)
-	def __init__(self, archive_path, *backup_sources, compress_mode=None, cipher=None, hash_name=None, stop_event=None):
+	@verify_value(io_write_rate=lambda x: x is None or x > 0)
+	def __init__(
+		self, archive_path, *backup_sources, compression_mode=None, cipher=None, stop_event=None,
+		io_write_rate=None
+	):
 		self.__archive_path = archive_path
 		self.__backup_sources = list(backup_sources)
+		self.__compression_mode = compression_mode
 		self.__cipher = cipher
-		self.__hash_name = hash_name if hash_name is not None else self.__default_hash_generator_name__
 		self.__stop_event = stop_event
+		self.__io_write_rate = io_write_rate
 		self.__writer_chain = None
-
-		self.__compress_mode = None
-		if compress_mode is not None and isinstance(compress_mode, WBackupTarArchiver.CompressMode) is False:
-			raise TypeError('Invalid compress mode')
-		else:
-			self.__compress_mode = compress_mode
+		self.__last_file = None
 
 	def archive_path(self):
 		return self.__archive_path
@@ -234,41 +94,43 @@ class WBackupTarArchiver:
 	def backup_sources(self):
 		return self.__backup_sources.copy()
 
-	def compress_mode(self):
-		return self.__compress_mode
+	def compression_mode(self):
+		return self.__compression_mode
 
 	def cipher(self):
 		return self.__cipher
-
-	def hash_name(self):
-		return self.__hash_name
 
 	def stop_event(self, value=None):
 		if value is not None:
 			self.__stop_event = value
 		return self.__stop_event
 
+	def io_write_rate(self):
+		return self.__io_write_rate
+
+	def last_file(self):
+		return self.__last_file
+
+	def archiving_details(self):
+		if self.__writer_chain is not None:
+			return self.__writer_chain.status()
+
 	def tar_mode(self):
-		compress_mode = self.compress_mode()
+		compress_mode = self.compression_mode()
 		return 'w:%s' % (compress_mode.value if compress_mode is not None else '')
-
-	def inside_archive_name(self):
-		return 'archive.tar'
-
-	@classmethod
-	def _verbose_filter(cls, tarinfo):
-		WAppsGlobals.log.debug('Compressing: %s', tarinfo.name)
-		return tarinfo
 
 	@verify_type(abs_path=bool)
 	def _archive(self, abs_path=True):
+		self.__last_file = None
 
 		archive_path = self.archive_path()
-		backup_tar = WTarArchivePatcher(archive_path, inside_archive_name=self.inside_archive_name())
+		inside_archive_name = WBackupMeta.Archive.inside_archive_filename(self.compression_mode())
+		backup_tar = WTarArchivePatcher(archive_path, inside_archive_name=inside_archive_name)
 
 		chain = [
 			backup_tar,
-			WWriterChainLink(WArchiverHashCalculator, self.hash_name())
+			WWriterChainLink(WArchiverThrottling, write_limit=self.io_write_rate()),
+			WWriterChainLink(WArchiverHashCalculator)
 		]
 
 		cipher = self.cipher()
@@ -281,12 +143,17 @@ class WBackupTarArchiver:
 
 		self.__writer_chain = WArchiverChain(*chain)
 
+		def last_file_tracking(tarinfo):
+			self.__last_file = tarinfo.name
+			return tarinfo
+
 		try:
+
 			tar = tarfile.open(fileobj=self.__writer_chain, mode=self.tar_mode())
 			for entry in self.backup_sources():
 				if abs_path is True:
 					entry = os.path.abspath(entry)
-				tar.add(entry, recursive=True, filter=self._verbose_filter)
+				tar.add(entry, recursive=True, filter=last_file_tracking)
 
 			self.__writer_chain.flush()
 			self.__writer_chain.write(backup_tar.padding(backup_tar.inside_archive_padding()))
@@ -307,7 +174,12 @@ class WBackupTarArchiver:
 		self._archive()
 
 	def meta(self):
-		result = {'archive': self.inside_archive_name()}
+		result = {
+			WBackupMeta.Archive.MetaOptions.inside_archive_filename:
+				WBackupMeta.Archive.inside_archive_filename(self.compression_mode()),
+			WBackupMeta.Archive.MetaOptions.archived_files:
+				self.backup_sources()
+		}
 		if self.__writer_chain is not None:
 			result.update(self.__writer_chain.meta())
 		return result
@@ -319,13 +191,18 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 	__mount_directory_prefix__ = 'wasp-backup-'
 
 	@verify_type('paranoid', archive_path=str, backup_sources=str)
-	@verify_type('paranoid', compress_mode=(WBackupTarArchiver.CompressMode, None), cipher=(WBackupCipher, None))
+	@verify_type('paranoid', compression_mode=(WBackupMeta.Archive.CompressionMode, None))
+	@verify_type('paranoid', cipher=(WBackupCipher, None), io_write_rate=(float, int, None))
 	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, backup_sources=lambda x: len(x) > 0)
+	@verify_value('paranoid', io_write_rate=lambda x: x is None or x > 0)
 	@verify_type(sudo=bool)
-	def __init__(self, archive_path, *backup_sources, compress_mode=None, sudo=False, cipher=None, stop_event=None):
+	def __init__(
+		self, archive_path, *backup_sources, compression_mode=None, sudo=False, cipher=None, stop_event=None,
+		io_write_rate=None
+	):
 		WBackupTarArchiver.__init__(
-			self, archive_path, *backup_sources, compress_mode=compress_mode, cipher=cipher,
-			stop_event=stop_event
+			self, archive_path, *backup_sources, compression_mode=compression_mode, cipher=cipher,
+			stop_event=stop_event, io_write_rate=io_write_rate
 		)
 		self.__sudo = sudo
 		self.__logical_volume_uuid = None
@@ -431,8 +308,9 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 
 	def meta(self):
 		meta = WBackupTarArchiver.meta(self)
-		meta['snapshot'] = self.__snapshot
-		meta['lv_uuid'] = self.__logical_volume_uuid if self.__logical_volume_uuid is not None else ''
+		meta[WBackupMeta.Archive.MetaOptions.snapshot_used] = self.__snapshot
+		meta[WBackupMeta.Archive.MetaOptions.original_lv_uuid] = \
+			self.__logical_volume_uuid if self.__logical_volume_uuid is not None else ''
 		return meta
 
 

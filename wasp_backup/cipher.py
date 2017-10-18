@@ -31,6 +31,8 @@ from wasp_general.crypto.aes import WAES, WAESMode, WZeroPadding
 from wasp_general.crypto.kdf import WPBKDF2
 from wasp_general.crypto.hmac import WHMAC
 
+from wasp_backup.core import WBackupMeta
+
 
 class WBackupCipher:
 
@@ -63,8 +65,12 @@ class WBackupCipher:
 			salt += "{:02x}".format(salt_byte)
 
 		return {
-			'cipher_algorithm': self.cipher_name(),
-			'salt': salt,
-			'pbkdf2_iterations_count': self.__pbkdf2_iterations_count__,
-			'pbkdf2_prf': ('HMAC-%s' % self.__hmac_hash_generator_name__)
+			WBackupMeta.Archive.MetaOptions.cipher_algorithm:
+				self.cipher_name(),
+			WBackupMeta.Archive.MetaOptions.pbkdf2_salt:
+				salt,
+			WBackupMeta.Archive.MetaOptions.pbkdf2_iterations_count:
+				self.__pbkdf2_iterations_count__,
+			WBackupMeta.Archive.MetaOptions.pbkdf2_prf:
+				('HMAC-%s' % self.__hmac_hash_generator_name__)
 		}

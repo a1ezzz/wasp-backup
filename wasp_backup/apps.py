@@ -27,19 +27,20 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
+import re
+
 from wasp_general.verify import verify_type
-from wasp_general.command.command import WCommandResult
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
 from wasp_general.task.scheduler.task_source import WInstantTaskSource
+from wasp_general.cli.formatter import na_formatter
 
-from wasp_launcher.core import WAppsGlobals
 from wasp_launcher.core_scheduler import WLauncherScheduleTask, WSchedulerTaskSourceInstaller, WLauncherTaskSource
-from wasp_launcher.core_scheduler import WLauncherScheduleRecord
-from wasp_launcher.core_broker import WResponsiveBrokerCommand, WBrokerCommand, WCommandKit
+from wasp_launcher.core_broker import WResponsiveBrokerCommand, WCommandKit
 
-from wasp_backup.archiver import WBackupTarArchiver, WLVMBackupTarArchiver
+from wasp_backup.archiver import WLVMBackupTarArchiver
 from wasp_backup.cipher import WBackupCipher
+from wasp_backup.core import WBackupMeta
 
 
 class WBackupBrokerCommandKit(WCommandKit):
@@ -110,14 +111,40 @@ class WBackupCommands:
 			def cast_string(value):
 				value = value.lower()
 				if value == 'gzip':
-					return WBackupTarArchiver.CompressMode.gzip
+					return WBackupMeta.Archive.CompressionMode.gzip
 				elif value == 'bzip2':
-					return WBackupTarArchiver.CompressMode.bzip2
+					return WBackupMeta.Archive.CompressionMode.bzip2
 				elif value == 'disabled':
 					return
 				else:
 					raise ValueError('Invalid compression value')
 
+		class WriteRateArgumentHelper(WCommandArgumentDescriptor.ArgumentCastingHelper):
+
+			__write_rate_re__ = re.compile('^(\d+[.\d]*)([KMGT]?)$')
+
+			def __init__(self):
+				WCommandArgumentDescriptor.ArgumentCastingHelper.__init__(
+					self, casting_fn=self.cast_string
+				)
+
+			@staticmethod
+			@verify_type(value=str)
+			def cast_string(value):
+				re_rate = WBackupCommands.Create.WriteRateArgumentHelper.__write_rate_re__.search(value)
+				if re_rate is None:
+					raise ValueError('Invalid write rate')
+				result = float(re_rate.group(1))
+				if re_rate.group(2) == 'K':
+					result *= (1 << 10)
+				elif re_rate.group(2) == 'M':
+					result *= (1 << 20)
+				elif re_rate.group(2) == 'G':
+					result *= (1 << 30)
+				elif re_rate.group(2) == 'T':
+					result *= (1 << 40)
+
+				return result
 
 		class SchedulerTask(WLauncherScheduleTask):
 
@@ -145,6 +172,12 @@ class WBackupCommands:
 			def brief_description(self):
 				return self.__task_description_prefix__ + (', '.join(self.__archiver.backup_sources()))
 
+			def state_details(self):
+				result = 'Archiving file: %s' % na_formatter(self.__archiver.last_file())
+				details = self.__archiver.archiving_details()
+				if details is not None:
+					result += '\n' + details
+				return result
 
 		__command__ = 'create'
 
@@ -159,11 +192,11 @@ class WBackupCommands:
 			WCommandArgumentDescriptor(
 				'sudo', flag_mode=True,
 				help_info='use "sudo" command for privilege promotion. "sudo" may be used for snapshot \
-	creation, partition mounting and un-mounting'
+creation, partition mounting and un-mounting'
 			),
 			WCommandArgumentDescriptor(
 				'force-snapshot', flag_mode=True, help_info='force to use snapshot for backup. \
-	By default, backup will try to make snapshot for input files, if it is unable to do so - then backup copy files as is. \
+By default, backup will try to make snapshot for input files, if it is unable to do so - then backup copy files as is. \
 				With this flag, if snapshot can not be created - backup will stop'
 			),
 			WCommandArgumentDescriptor(
@@ -176,12 +209,12 @@ class WBackupCommands:
 			WCommandArgumentDescriptor(
 				'snapshot-mount-dir', meta_var='mount_path',
 				help_info='path where snapshot volume should be mount. It is random directory by \
-	default'
+default'
 			),
 			WCommandArgumentDescriptor(
 				'compression', meta_var='compression_type',
 				help_info='compression option. One of: "gzip", "bzip2" or "disabled". It is disabled \
-	by default', casting_helper=CompressionArgumentHelper()
+by default', casting_helper=CompressionArgumentHelper()
 			),
 			WCommandArgumentDescriptor(
 				'password', meta_var='encryption_password',
@@ -190,21 +223,27 @@ class WBackupCommands:
 			WCommandArgumentDescriptor(
 				'cipher_algorithm', meta_var='algorithm_name',
 				help_info='cipher that will be used for encrypt (backup won\'nt be encrypted if \
-	password wasn\'t set). It is "AES-256-CBC" by default',
+password was not set). It is "AES-256-CBC" by default',
 				casting_helper=WCommandArgumentDescriptor.StringArgumentCastingHelper(
 					validate_fn=cipher_name_validation
 				),
 				default_value='AES-256-CBC'
-			)
+			),
+			WCommandArgumentDescriptor(
+				'io-write-rate', meta_var='maximum writing rate',
+				help_info='use this parameter to limit disk I/O load (bytes per second). You can use \
+suffixes like "K" for kibibytes, "M" for mebibytes, "G" for gibibytes, "T" for tebibytes for convenience ',
+				casting_helper=WriteRateArgumentHelper()
+			),
 		]
 
 		__task_source_name__ = WBackupSchedulerInstaller.InstantTaskSource.__task_source_name__
 		__scheduler_instance__ = WBackupSchedulerInstaller.__scheduler_instance__
 
 		def create_task(self, command_arguments, **command_env):
-			compress_mode = None
+			compression_mode = None
 			if 'compression' in command_arguments.keys():
-				compress_mode = command_arguments['compression']
+				compression_mode = command_arguments['compression']
 
 			cipher = None
 			if 'password' in command_arguments:
@@ -220,9 +259,14 @@ class WBackupCommands:
 			if 'snapshot-mount-dir' in command_arguments.keys():
 				snapshot_mount_dir = command_arguments['snapshot-mount-dir']
 
+			io_write_rate = None
+			if 'io-write-rate' in command_arguments.keys():
+				io_write_rate = command_arguments['io-write-rate']
+
 			archiver = WLVMBackupTarArchiver(
-				command_arguments['output'], *command_arguments['input'], compress_mode=compress_mode,
-				sudo=command_arguments['sudo'], cipher=cipher
+				command_arguments['output'], *command_arguments['input'],
+				compression_mode=compression_mode, sudo=command_arguments['sudo'], cipher=cipher,
+				io_write_rate=io_write_rate
 			)
 
 			return WBackupCommands.Create.SchedulerTask(
