@@ -148,27 +148,37 @@ class WBackupTarArchiver:
 			return tarinfo
 
 		try:
+			try:
 
-			tar = tarfile.open(fileobj=self.__writer_chain, mode=self.tar_mode())
-			for entry in self.backup_sources():
-				if abs_path is True:
-					entry = os.path.abspath(entry)
-				tar.add(entry, recursive=True, filter=last_file_tracking)
+				tar = tarfile.open(fileobj=self.__writer_chain, mode=self.tar_mode())
+				for entry in self.backup_sources():
+					if abs_path is True:
+						entry = os.path.abspath(entry)
+					tar.add(entry, recursive=True, filter=last_file_tracking)
 
-			self.__writer_chain.flush()
-			self.__writer_chain.write(backup_tar.padding(backup_tar.inside_archive_padding()))
+				self.__writer_chain.flush()
+				self.__writer_chain.write(backup_tar.padding(backup_tar.inside_archive_padding()))
+			finally:
+				self.__writer_chain.flush()
+				self.__writer_chain.close()
 
+			WAppsGlobals.log.info(
+				'Archive "%s" was created successfully. Patching archive with meta...' % archive_path
+			)
+			backup_tar.patch(self.meta())
+			WAppsGlobals.log.info('Archive "%s" was successfully patched' % archive_path)
+
+		except WResponsiveWriter.WriterTerminated:
+			os.unlink(archive_path)
+			WAppsGlobals.log.error(
+				'Unable to create archive "%s" - task terminated, changes discarded' % archive_path
+			)
+			return
 		except Exception:
 			os.unlink(archive_path)
 			WAppsGlobals.log.error('Unable to create archive "%s". Changes discarded' % archive_path)
 			raise
-		finally:
-			self.__writer_chain.flush()
-			self.__writer_chain.close()
 
-		WAppsGlobals.log.debug('Archive "%s" was created successfully. Patching...' % archive_path)
-		backup_tar.patch(self.meta())
-		WAppsGlobals.log.debug('Archive "%s" was successfully patched' % archive_path)
 
 	def archive(self):
 		self._archive()
