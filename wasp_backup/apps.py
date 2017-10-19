@@ -38,7 +38,7 @@ from wasp_general.cli.formatter import na_formatter
 from wasp_launcher.core_scheduler import WLauncherScheduleTask, WSchedulerTaskSourceInstaller, WLauncherTaskSource
 from wasp_launcher.core_broker import WResponsiveBrokerCommand, WCommandKit
 
-from wasp_backup.archiver import WLVMBackupTarArchiver
+from wasp_backup.file_archiver import WBackupLVMFileArchiver
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.core import WBackupMeta
 
@@ -263,7 +263,7 @@ suffixes like "K" for kibibytes, "M" for mebibytes, "G" for gibibytes, "T" for t
 			if 'io-write-rate' in command_arguments.keys():
 				io_write_rate = command_arguments['io-write-rate']
 
-			archiver = WLVMBackupTarArchiver(
+			archiver = WBackupLVMFileArchiver(
 				command_arguments['output'], *command_arguments['input'],
 				compression_mode=compression_mode, sudo=command_arguments['sudo'], cipher=cipher,
 				io_write_rate=io_write_rate
