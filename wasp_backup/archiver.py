@@ -197,9 +197,6 @@ class WBackupTarArchiver:
 
 class WLVMBackupTarArchiver(WBackupTarArchiver):
 
-	__default_snapshot_size__ = 0.1
-	__mount_directory_prefix__ = 'wasp-backup-'
-
 	@verify_type('paranoid', archive_path=str, backup_sources=str)
 	@verify_type('paranoid', compression_mode=(WBackupMeta.Archive.CompressionMode, None))
 	@verify_type('paranoid', cipher=(WBackupCipher, None), io_write_rate=(float, int, None))
@@ -265,7 +262,7 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 			return
 
 		if snapshot_size is None:
-			snapshot_size = self.__class__.__default_snapshot_size__
+			snapshot_size = WBackupMeta.LVMSnapshot.__default_snapshot_size__
 
 		snapshot_suffix = '-snapshot-%s' % str(uuid.uuid4())
 		snapshot_volume = None
@@ -280,7 +277,8 @@ class WLVMBackupTarArchiver(WBackupTarArchiver):
 
 			if mount_directory is None:
 				mount_directory = tempfile.mkdtemp(
-					suffix=snapshot_suffix, prefix=self.__class__.__mount_directory_prefix__
+					suffix=snapshot_suffix,
+					prefix=WBackupMeta.LVMSnapshot.__mount_directory_prefix__
 				)
 				remove_directory = True
 			if mount_options is None:

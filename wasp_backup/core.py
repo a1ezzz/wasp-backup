@@ -65,6 +65,10 @@ class WBackupMeta:
 				return WBackupMeta.Archive.__inside_archive_basic_filename__ + '.tar.' + suffix
 			raise TypeError('Invalid compression mode')
 
+	class LVMSnapshot:
+		__default_snapshot_size__ = 0.1
+		__mount_directory_prefix__ = 'wasp-backup-'
+
 
 class WArchiverIOMetaProvider:
 
