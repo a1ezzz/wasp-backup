@@ -28,13 +28,95 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 from wasp_backup.version import __status__
 
 from wasp_general.task.scheduler.task_source import WInstantTaskSource
+from wasp_general.cli.formatter import na_formatter
 
+from wasp_launcher.core import WAppsGlobals
 from wasp_launcher.core_scheduler import WSchedulerTaskSourceInstaller, WLauncherTaskSource
-from wasp_launcher.core_broker import WCommandKit
+from wasp_launcher.core_broker import WCommandKit, WBrokerCommand, WResponsiveBrokerCommand
 
 from wasp_backup.core import WBackupMeta
-from wasp_backup.create import WResponsiveCreateBackupCommand
-from wasp_backup.check import WResponsiveCheckBackupCommand
+from wasp_backup.create import WCreateBackupCommand
+from wasp_backup.check import WCheckBackupCommand
+
+
+class WResponsiveCreateBackupCommand(WResponsiveBrokerCommand):
+
+	class CreateBackupCommand(WCreateBackupCommand, WBrokerCommand):
+
+		def __init__(self):
+			WCreateBackupCommand.__init__(self, WAppsGlobals.log)
+			WBrokerCommand.__init__(
+				self, self.command_token(), *self.argument_descriptors(),
+				relationships=self.relationships()
+			)
+
+		def brief_description(self):
+			return 'create backup archive of files and directories'
+
+	class ScheduledTask(WResponsiveBrokerCommand.ScheduledTask):
+
+		def state_details(self):
+			archiver = self.basic_command().archiver()
+			if archiver is not None:
+				return 'Archiving is not running. May be finalizing'
+
+			result = 'Archiving file: %s' % na_formatter(archiver.last_file())
+			details = archiver.archiving_details()
+			if details is not None:
+				result += '\n' + details
+			return result
+
+		def thread_started(self):
+			self.basic_command().stop_event(self.stop_event())
+			WResponsiveBrokerCommand.ScheduledTask.thread_started(self)
+
+	__task_source_name__ = WBackupMeta.__task_source_name__
+	__scheduler_instance__ = WBackupMeta.__scheduler_instance_name__
+
+	def __init__(self):
+		WResponsiveBrokerCommand.__init__(
+			self, WResponsiveCreateBackupCommand.CreateBackupCommand(),
+			scheduled_task_cls=WResponsiveCreateBackupCommand.ScheduledTask
+		)
+
+
+class WResponsiveCheckBackupCommand(WResponsiveBrokerCommand):
+
+	class CheckBackupCommand(WCheckBackupCommand, WBrokerCommand):
+
+		def __init__(self):
+			WCheckBackupCommand.__init__(self, WAppsGlobals.log)
+			WBrokerCommand.__init__(
+				self, self.command_token(), *self.argument_descriptors(),
+				relationships=self.relationships()
+			)
+
+		def brief_description(self):
+			return 'check backup archive for integrity'
+
+	class ScheduledTask(WResponsiveBrokerCommand.ScheduledTask):
+
+		def state_details(self):
+			checker = self.basic_command().checker()
+			if checker is not None:
+				details = checker.check_details()
+				if details is not None:
+					return '\n' + details
+
+			return 'Checking is not running. May be finalizing'
+
+		def thread_started(self):
+			self.basic_command().stop_event(self.stop_event())
+			WResponsiveBrokerCommand.ScheduledTask.thread_started(self)
+
+	__task_source_name__ = WBackupMeta.__task_source_name__
+	__scheduler_instance__ = WBackupMeta.__scheduler_instance_name__
+
+	def __init__(self):
+		WResponsiveBrokerCommand.__init__(
+			self, WResponsiveCheckBackupCommand.CheckBackupCommand(),
+			scheduled_task_cls=WResponsiveCheckBackupCommand.ScheduledTask
+		)
 
 
 class WBackupBrokerCommandKit(WCommandKit):
@@ -47,7 +129,10 @@ class WBackupBrokerCommandKit(WCommandKit):
 
 	@classmethod
 	def commands(cls):
-		return WResponsiveCreateBackupCommand(), WResponsiveCheckBackupCommand()
+		return (
+			WResponsiveCreateBackupCommand(),
+			WResponsiveCheckBackupCommand(),
+		)
 
 
 class WBackupSchedulerInstaller(WSchedulerTaskSourceInstaller):

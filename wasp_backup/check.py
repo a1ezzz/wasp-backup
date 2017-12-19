@@ -27,13 +27,69 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
-from wasp_general.command.enhanced import WCommandArgumentDescriptor
+from wasp_general.command.enhanced import WCommandArgumentDescriptor, WEnhancedCommand
 
 from wasp_general.command.result import WPlainCommandResult
-from wasp_launcher.core_broker import WBrokerCommand, WResponsiveBrokerCommand
+
 
 from wasp_backup.core import WBackupMeta
 from wasp_backup.archiver import WBackupTarChecker
+
+
+class WCheckBackupCommand(WEnhancedCommand):
+
+	__command__ = 'check'
+	__arguments__ = [
+		WCommandArgumentDescriptor(
+			'archive', required=True, multiple_values=False, meta_var='archive_path',
+			help_info='backup file to check'
+		),
+		WCommandArgumentDescriptor(
+			'io-read-rate', meta_var='maximum reading rate',
+			help_info='use this parameter to limit disk I/O load (bytes per second). You can use '
+			'suffixes like "K" for kibibytes, "M" for mebibytes, "G" for gibibytes, "T" for tebibytes for '
+			'convenience ', casting_helper=WCommandArgumentDescriptor.DataSizeArgumentHelper()
+		)
+	]
+
+	def __init__(self, logger):
+		WEnhancedCommand.__init__(self, self.__command__, *self.__arguments__)
+		self.__logger = logger
+		self.__stop_event = None
+		self.__checker = None
+
+	def stop_event(self, value=None):
+		if value is not None:
+			self.__stop_event = value
+		return self.__stop_event
+
+	def checker(self):
+		return self.__checker
+
+	def _exec(self, command_arguments, **command_env):
+		archive = command_arguments['archive']
+		io_read_rate = None
+		if 'io-read-rate' in command_arguments.keys():
+			io_read_rate = command_arguments['io-read-rate']
+
+		try:
+			self.__checker = WBackupTarChecker(
+				archive, self.__logger, stop_event=self.stop_event(), io_read_rate=io_read_rate
+			)
+			result, original_hash, calculated_hash = self.__checker.check_archive()
+		finally:
+			self.__checker = None
+
+		if result is True:
+			return WPlainCommandResult('Archive "%s" is OK' % archive)
+		return WPlainCommandResult.error(
+			'Archive "%s" is corrupted. Calculated hash - "%s". Original hash - "%s"' %
+			(archive, calculated_hash, original_hash)
+		)
+
+'''
+
+from wasp_launcher.core_broker import WBrokerCommand, WResponsiveBrokerCommand
 
 
 class WCheckBackupCommand(WBrokerCommand):
@@ -114,3 +170,4 @@ class WResponsiveCheckBackupCommand(WResponsiveBrokerCommand):
 		WResponsiveBrokerCommand.__init__(
 			self, WCheckBackupCommand(), scheduled_task_cls=WResponsiveCheckBackupCommand.ScheduledTask
 		)
+'''

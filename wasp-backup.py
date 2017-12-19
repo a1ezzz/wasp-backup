@@ -27,35 +27,20 @@ from wasp_backup.version import __status__
 
 import sys
 import os
-import signal
+from logging import getLogger
 
 from wasp_general.command.command import WCommandSet, WCommandProto
-
-from wasp_launcher.bootstrap import WLauncherBootstrap
-from wasp_launcher.core import WAppRegistry
 
 from wasp_backup.create import WCreateBackupCommand
 from wasp_backup.check import WCheckBackupCommand
 
-import wasp_backup
-
 
 if __name__ == '__main__':
 
-	backup_app_config = os.path.join(os.path.dirname(wasp_backup.__file__), 'config', 'wasp-backup-cli.ini')
-	os.environ['WASP_LAUNCHER_CONFIG_FILE'] = backup_app_config
-
-	bootstrap = WLauncherBootstrap()
-	bootstrap.load_configuration()
+	logger = getLogger(os.path.basename(sys.argv[0]))
 
 	command_set = WCommandSet()
-	command_set.commands().add(WCreateBackupCommand())
-	command_set.commands().add(WCheckBackupCommand())
+	command_set.commands().add(WCreateBackupCommand(logger))
+	command_set.commands().add(WCheckBackupCommand(logger))
 
 	print(command_set.exec(WCommandProto.join_tokens(*(sys.argv[1:]))))
-
-	def shutdown_signal(signum, frame):
-		WAppRegistry.all_stop()
-
-	signal.signal(signal.SIGTERM, shutdown_signal)
-	signal.signal(signal.SIGINT, shutdown_signal)

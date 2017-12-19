@@ -50,11 +50,11 @@ class WBackupFileArchiver(WBackupTarArchiver):
 	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_write_rate=lambda x: x is None or x > 0)
 	@verify_value(backup_sources=lambda x: len(x) > 0)
 	def __init__(
-		self, archive_path, *backup_sources, compression_mode=None, cipher=None, stop_event=None,
+		self, archive_path, logger, *backup_sources, compression_mode=None, cipher=None, stop_event=None,
 		io_write_rate=None, abs_path=False
 	):
 		WBackupTarArchiver.__init__(
-			self, archive_path, compression_mode=compression_mode, cipher=cipher, stop_event=stop_event,
+			self, archive_path, logger, compression_mode=compression_mode, cipher=cipher, stop_event=stop_event,
 			io_write_rate=io_write_rate
 		)
 
@@ -100,11 +100,11 @@ class WBackupLVMFileArchiver(WBackupFileArchiver):
 	@verify_value('paranoid', io_write_rate=lambda x: x is None or x > 0)
 	@verify_type(sudo=bool)
 	def __init__(
-		self, archive_path, *backup_sources, compression_mode=None, sudo=False, cipher=None, stop_event=None,
+		self, archive_path, logger, *backup_sources, compression_mode=None, sudo=False, cipher=None, stop_event=None,
 		io_write_rate=None
 	):
 		WBackupFileArchiver.__init__(
-			self, archive_path, *backup_sources, compression_mode=compression_mode, cipher=cipher,
+			self, archive_path, logger, *backup_sources, compression_mode=compression_mode, cipher=cipher,
 			stop_event=stop_event, io_write_rate=io_write_rate, abs_path=True
 		)
 		self.__sudo = sudo

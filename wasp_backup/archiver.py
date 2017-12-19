@@ -35,8 +35,6 @@ from wasp_general.verify import verify_type, verify_value
 from wasp_general.io import WWriterChainLink, WReaderChainLink, WThrottlingReader, WResponsiveWriter, WResponsiveIO
 from wasp_general.io import WResponsiveReader, WHashCalculationReader, WDiscardReaderResult, WReaderChain
 
-from wasp_launcher.core import WAppsGlobals
-
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.core import WBackupMeta
 from wasp_backup.io import WTarArchivePatcher, WArchiverThrottlingWriter, WArchiverHashCalculationWriter
@@ -72,13 +70,17 @@ class WBasicTarIO:
 
 	@verify_type(archive_path=str, io_rate=(float, int, None))
 	@verify_value(archive_path=lambda x: len(x) > 0, io_rate=lambda x: x is None or x > 0)
-	def __init__(self, archive_path, stop_event=None, io_rate=None):
+	def __init__(self, archive_path, logger, stop_event=None, io_rate=None):
 		self.__archive_path = archive_path
+		self.__logger = logger
 		self.__stop_event = stop_event
 		self.__io_rate = io_rate
 
 	def archive_path(self):
 		return self.__archive_path
+
+	def logger(self):
+		return self.__logger
 
 	def io_rate(self):
 		return self.__io_rate
@@ -94,8 +96,8 @@ class WBackupTarArchiver(WBasicTarIO):
 	@verify_type('paranoid', archive_path=str, io_write_rate=(float, int, None))
 	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_write_rate=lambda x: x is None or x > 0)
 	@verify_type(cipher=(WBackupCipher, None), compression_mode=(WBackupMeta.Archive.CompressionMode, None))
-	def __init__(self, archive_path, compression_mode=None, cipher=None, stop_event=None, io_write_rate=None):
-		WBasicTarIO.__init__(self, archive_path, stop_event=stop_event, io_rate=io_write_rate)
+	def __init__(self, archive_path, logger, compression_mode=None, cipher=None, stop_event=None, io_write_rate=None):
+		WBasicTarIO.__init__(self, archive_path, logger, stop_event=stop_event, io_rate=io_write_rate)
 		self.__compression_mode = compression_mode
 		self.__cipher = cipher
 		self.__writer_chain = None
@@ -150,21 +152,21 @@ class WBackupTarArchiver(WBasicTarIO):
 				self.__writer_chain.flush()
 				self.__writer_chain.close()
 
-			WAppsGlobals.log.info(
+			self.logger().info(
 				'Archive "%s" was created successfully. Patching archive with meta...' % archive_path
 			)
 			backup_tar.patch(self.meta())
-			WAppsGlobals.log.info('Archive "%s" was successfully patched' % archive_path)
+			self.logger().info('Archive "%s" was successfully patched' % archive_path)
 
 		except WResponsiveIO.IOTerminated:
 			os.unlink(archive_path)
-			WAppsGlobals.log.error(
+			self.logger().error(
 				'Unable to create archive "%s" - task terminated, changes discarded' % archive_path
 			)
 			return
 		except Exception:
 			os.unlink(archive_path)
-			WAppsGlobals.log.error('Unable to create archive "%s". Changes discarded' % archive_path)
+			self.logger().error('Unable to create archive "%s". Changes discarded' % archive_path)
 			raise
 
 	def _populate_archive(self, tar_archive):
@@ -184,8 +186,8 @@ class WBackupTarExtractor(WBasicTarIO):
 
 	@verify_type('paranoid', archive_path=str, io_read_rate=(float, int, None))
 	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_read_rate=lambda x: x is None or x > 0)
-	def __init__(self, archive_path, stop_event=None, io_read_rate=None):
-		WBasicTarIO.__init__(self, archive_path, stop_event=stop_event, io_rate=io_read_rate)
+	def __init__(self, archive_path, logger, stop_event=None, io_read_rate=None):
+		WBasicTarIO.__init__(self, archive_path, logger, stop_event=stop_event, io_rate=io_read_rate)
 
 	def io_read_rate(self):
 		return self.io_rate()
@@ -220,8 +222,8 @@ class WBackupTarChecker(WBackupTarExtractor):
 
 	@verify_type('paranoid', archive_path=str, io_read_rate=(float, int, None))
 	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_read_rate=lambda x: x is None or x > 0)
-	def __init__(self, archive_path, stop_event=None, io_read_rate=None):
-		WBackupTarExtractor.__init__(self, archive_path, stop_event=stop_event, io_read_rate=io_read_rate)
+	def __init__(self, archive_path, logger, stop_event=None, io_read_rate=None):
+		WBackupTarExtractor.__init__(self, archive_path, logger, stop_event=stop_event, io_read_rate=io_read_rate)
 		self.__reader_chain = None
 
 	def reader_chain(self):
@@ -256,12 +258,13 @@ class WBackupTarChecker(WBackupTarExtractor):
 			calculated_hash = calc_instance.hexdigest().upper()
 			return original_hash == calculated_hash, original_hash, calculated_hash
 		except WResponsiveIO.IOTerminated:
-			WAppsGlobals.log.error(
+			self.logger().error(
 				'Unable to check archive "%s" - task terminated' % self.archive_path()
 			)
 			return
 		finally:
 			self.__reader_chain = None
+
 
 """
 __openssl_mode_re__ = re.compile('aes-([0-9]+)-(.+)')
