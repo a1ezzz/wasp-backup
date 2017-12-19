@@ -2,3 +2,4 @@
 
 extra/wasp-backup.conf => etc/wasp-launcher.conf.d/40-wasp-backup.conf
 extra/wasp-backup.sudo => etc/sudoers.d/wasp-backup
+wasp-backup.py => /usr/bin/wasp-backup.py

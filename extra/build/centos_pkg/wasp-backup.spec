@@ -28,6 +28,8 @@ some python library
 
 %install
 %py3_install
+cp wasp-backup.py %{buildroot}/usr/bin
 
 %files
 %{python3_sitelib}/*
+/usr/bin/wasp-backup.py
