@@ -114,11 +114,14 @@ class WBackupLVMFileArchiver(WBackupFileArchiver):
 	def sudo(self):
 		return self.__sudo
 
-	@verify_type(snapshot_force=bool, snapshot_size=(int, float, None), mount_directory=(str, None))
+	@verify_type(disable_snapshot=bool, snapshot_force=bool, snapshot_size=(int, float, None), mount_directory=(str, None))
 	@verify_type(mount_fs=(str, None), mount_options=(list, tuple, set, None))
 	def archive(
-		self, snapshot_force=False, snapshot_size=None, mount_directory=None, mount_fs=None, mount_options=None
+		self, disable_snapshot=False, snapshot_force=False, snapshot_size=None, mount_directory=None, mount_fs=None, mount_options=None
 	):
+		if disable_snapshot is True and snapshot_force is True:
+			raise ValueError('Conflict flags "disable_snapshot" and "snapshot_force" was specified')
+
 		self.__logical_volume_uuid = None
 		self.__snapshot = False
 
@@ -132,24 +135,25 @@ class WBackupLVMFileArchiver(WBackupFileArchiver):
 				WBackupTarArchiver.archive(self)
 				return
 
-		for source in backup_sources:
-			lv = WLogicalVolume.logical_volume(source, sudo=self.sudo())
-			if lv is None:
-				if snapshot_force is True:
-					raise RuntimeError('Unable to create snapshot for non-LVM volume')
-				logical_volume = None
-				break
-			if logical_volume is None:
-				logical_volume = lv
-			elif os.path.realpath(logical_volume.volume_path()) == os.path.realpath(lv.volume_path()):
-				pass
-			else:
-				if snapshot_force is True:
-					raise RuntimeError(
-						'Unable to create snapshot - files reside on different volumes'
-					)
-				logical_volume = None
-				break
+		if disable_snapshot is False:
+			for source in backup_sources:
+				lv = WLogicalVolume.logical_volume(source, sudo=self.sudo())
+				if lv is None:
+					if snapshot_force is True:
+						raise RuntimeError('Unable to create snapshot for non-LVM volume')
+					logical_volume = None
+					break
+				if logical_volume is None:
+					logical_volume = lv
+				elif os.path.realpath(logical_volume.volume_path()) == os.path.realpath(lv.volume_path()):
+					pass
+				else:
+					if snapshot_force is True:
+						raise RuntimeError(
+							'Unable to create snapshot - files reside on different volumes'
+						)
+					logical_volume = None
+					break
 
 		if logical_volume is None:
 			if snapshot_force is True:
