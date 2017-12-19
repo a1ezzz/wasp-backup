@@ -29,6 +29,8 @@ from wasp_backup.version import __status__
 
 from enum import Enum
 
+from wasp_general.crypto.aes import WAESMode
+
 
 class WBackupMeta:
 
@@ -52,6 +54,7 @@ class WBackupMeta:
 			cipher_algorithm = 'cipher_algorithm'
 
 		__meta_filename__ = 'meta.json'
+		__maximum_meta_filesize__ = 50 * 1024 * 1024
 		__inside_archive_basic_filename__ = 'archive'
 		__file_mode__ = int('660', base=8)
 		__hash_generator_name__ = 'MD5'
@@ -69,6 +72,9 @@ class WBackupMeta:
 		__default_snapshot_size__ = 0.1
 		__mount_directory_prefix__ = 'wasp-backup-'
 
+	__scheduler_instance_name__ = 'com.binblob.wasp-backup'
+	__task_source_name__ = 'com.binblob.wasp-backup.scheduler.sources.instant_source'
+
 
 class WArchiverIOMetaProvider:
 
@@ -80,3 +86,12 @@ class WArchiverIOStatusProvider:
 
 	def status(self):
 		return None
+
+
+def cipher_name_validation(cipher_name):
+	try:
+		if WAESMode.parse_cipher_name(cipher_name) is not None:
+			return True
+	except ValueError:
+		pass
+	return False

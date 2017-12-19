@@ -36,9 +36,11 @@ import grp
 import math
 import pwd
 from datetime import datetime
+from abc import ABCMeta, abstractmethod
 
-from wasp_general.io import WAESWriter, WHashCalculationWriter, WWriterChain
-from wasp_general.io import WThrottlingWriter
+from wasp_general.verify import verify_type
+from wasp_general.io import WAESWriter, WHashCalculationWriter, WWriterChain, WThrottlingWriter, WWriterChainLink
+from wasp_general.io import WReaderChain, WThrottlingReader, WReaderChainLink
 from wasp_general.cli.formatter import data_size_formatter
 
 
@@ -85,6 +87,10 @@ class WTarArchivePatcher(io.BufferedWriter):
 
 		meta_data = self.process_meta(meta_data)
 		json_data = json.dumps(meta_data).encode()
+
+		if len(json_data) > WBackupMeta.Archive.__maximum_meta_filesize__:
+			raise RuntimeError('Meta data corrupted - too big')
+
 		meta_header = self.tar_header(WBackupMeta.Archive.__meta_filename__, size=len(json_data))
 		result_archive_size += len(meta_header)
 		result_archive_size += len(json_data)
@@ -149,7 +155,7 @@ class WTarArchivePatcher(io.BufferedWriter):
 		return tarfile.NUL * padding_size if padding_size > 0 else b''
 
 
-class WArchiverHashCalculator(WHashCalculationWriter, WArchiverIOMetaProvider):
+class WArchiverHashCalculationWriter(WHashCalculationWriter, WArchiverIOMetaProvider):
 
 	def __init__(self, raw):
 		WHashCalculationWriter.__init__(self, raw, WBackupMeta.Archive.__hash_generator_name__)
@@ -175,23 +181,37 @@ class WArchiverAESCipher(WAESWriter, WArchiverIOMetaProvider):
 		return self.__meta
 
 
-class WArchiverThrottling(WThrottlingWriter, WArchiverIOMetaProvider, WArchiverIOStatusProvider):
+class WArchiverThrottlingWriter(WThrottlingWriter, WArchiverIOMetaProvider, WArchiverIOStatusProvider):
 
 	def __init__(self, raw, write_limit=None):
-		WThrottlingWriter.__init__(self, raw, write_limit=write_limit)
+		WThrottlingWriter.__init__(self, raw, throttling_to=write_limit)
 		WArchiverIOMetaProvider.__init__(self)
 		WArchiverIOStatusProvider.__init__(self)
 
 	def meta(self):
 		return {
-			WBackupMeta.Archive.MetaOptions.io_write_rate: math.ceil(self.write_rate())
+			WBackupMeta.Archive.MetaOptions.io_write_rate: math.ceil(self.rate())
 		}
 
 	def status(self):
-		return 'Write rate: %s/sec' % data_size_formatter(math.ceil(self.write_rate()))
+		result = 'Write rate: %s/sec\n' % data_size_formatter(math.ceil(self.rate()))
+		result += 'Bytes processed: %i' % self.bytes_processed()
+		return result
 
 
-class WArchiverChain(WWriterChain):
+class WArchiverThrottlingReader(WThrottlingReader, WArchiverIOStatusProvider):
+
+	def __init__(self, raw, read_limit=None):
+		WThrottlingReader.__init__(self, raw, throttling_to=read_limit)
+		WArchiverIOStatusProvider.__init__(self)
+
+	def status(self):
+		result = 'Read rate: %s/sec\n' % data_size_formatter(math.ceil(self.rate()))
+		result += 'Bytes processed: %i' % self.bytes_processed()
+		return result
+
+
+class WArchiverStatus(metaclass=ABCMeta):
 
 	def meta(self):
 		result = {}
@@ -207,3 +227,23 @@ class WArchiverChain(WWriterChain):
 				result.append(link.status())
 		if len(result) > 0:
 			return '\n'.join(result)
+
+	@abstractmethod
+	def __iter__(self):
+		raise NotImplementedError('This method is abstract')
+
+
+class WArchiverWriterChain(WWriterChain, WArchiverStatus):
+
+	@verify_type('paranoid', links=WWriterChainLink)
+	def __init__(self, last_io_obj, *links):
+		WWriterChain.__init__(self, last_io_obj, *links)
+		WArchiverStatus.__init__(self)
+
+
+class WExtractorReaderChain(WReaderChain, WArchiverStatus):
+
+	@verify_type('paranoid', links=WReaderChainLink)
+	def __init__(self, last_io_obj, *links):
+		WReaderChain.__init__(self, last_io_obj, *links)
+		WArchiverStatus.__init__(self)

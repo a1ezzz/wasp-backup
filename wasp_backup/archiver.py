@@ -29,16 +29,19 @@ from wasp_backup.version import __status__
 
 import os
 import tarfile
+import json
 
 from wasp_general.verify import verify_type, verify_value
-from wasp_general.io import WWriterChainLink, WResponsiveWriter
+from wasp_general.io import WWriterChainLink, WReaderChainLink, WThrottlingReader, WResponsiveWriter, WResponsiveIO
+from wasp_general.io import WResponsiveReader, WHashCalculationReader, WDiscardReaderResult, WReaderChain
 
 from wasp_launcher.core import WAppsGlobals
 
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.core import WBackupMeta
-from wasp_backup.io import WTarArchivePatcher, WArchiverThrottling, WArchiverHashCalculator, WArchiverAESCipher
-from wasp_backup.io import WArchiverChain
+from wasp_backup.io import WTarArchivePatcher, WArchiverThrottlingWriter, WArchiverHashCalculationWriter
+from wasp_backup.io import WArchiverAESCipher, WArchiverThrottlingReader
+from wasp_backup.io import WArchiverWriterChain, WExtractorReaderChain
 
 
 """
@@ -65,35 +68,46 @@ archive meta information -------------------------------|     (may be automatic 
 """
 
 
-class WBackupTarArchiver:
+class WBasicTarIO:
 
-	@verify_type(archive_path=str, cipher=(WBackupCipher, None))
-	@verify_type(compression_mode=(WBackupMeta.Archive.CompressionMode, None), io_write_rate=(float, int, None))
-	@verify_value(archive_path=lambda x: len(x) > 0, io_write_rate=lambda x: x is None or x > 0)
-	def __init__(self, archive_path, compression_mode=None, cipher=None, stop_event=None, io_write_rate=None):
+	@verify_type(archive_path=str, io_rate=(float, int, None))
+	@verify_value(archive_path=lambda x: len(x) > 0, io_rate=lambda x: x is None or x > 0)
+	def __init__(self, archive_path, stop_event=None, io_rate=None):
 		self.__archive_path = archive_path
-		self.__compression_mode = compression_mode
-		self.__cipher = cipher
 		self.__stop_event = stop_event
-		self.__io_write_rate = io_write_rate
-		self.__writer_chain = None
+		self.__io_rate = io_rate
 
 	def archive_path(self):
 		return self.__archive_path
 
-	def compression_mode(self):
-		return self.__compression_mode
-
-	def cipher(self):
-		return self.__cipher
+	def io_rate(self):
+		return self.__io_rate
 
 	def stop_event(self, value=None):
 		if value is not None:
 			self.__stop_event = value
 		return self.__stop_event
 
+
+class WBackupTarArchiver(WBasicTarIO):
+
+	@verify_type('paranoid', archive_path=str, io_write_rate=(float, int, None))
+	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_write_rate=lambda x: x is None or x > 0)
+	@verify_type(cipher=(WBackupCipher, None), compression_mode=(WBackupMeta.Archive.CompressionMode, None))
+	def __init__(self, archive_path, compression_mode=None, cipher=None, stop_event=None, io_write_rate=None):
+		WBasicTarIO.__init__(self, archive_path, stop_event=stop_event, io_rate=io_write_rate)
+		self.__compression_mode = compression_mode
+		self.__cipher = cipher
+		self.__writer_chain = None
+
 	def io_write_rate(self):
-		return self.__io_write_rate
+		return self.io_rate()
+
+	def compression_mode(self):
+		return self.__compression_mode
+
+	def cipher(self):
+		return self.__cipher
 
 	def archiving_details(self):
 		if self.__writer_chain is not None:
@@ -110,8 +124,8 @@ class WBackupTarArchiver:
 
 		chain = [
 			backup_tar,
-			WWriterChainLink(WArchiverThrottling, write_limit=self.io_write_rate()),
-			WWriterChainLink(WArchiverHashCalculator)
+			WWriterChainLink(WArchiverThrottlingWriter, write_limit=self.io_write_rate()),
+			WWriterChainLink(WArchiverHashCalculationWriter)
 		]
 
 		cipher = self.cipher()
@@ -122,7 +136,7 @@ class WBackupTarArchiver:
 		if stop_event is not None:
 			chain.append(WWriterChainLink(WResponsiveWriter, stop_event))
 
-		self.__writer_chain = WArchiverChain(*chain)
+		self.__writer_chain = WArchiverWriterChain(*chain)
 
 		try:
 			try:
@@ -142,7 +156,7 @@ class WBackupTarArchiver:
 			backup_tar.patch(self.meta())
 			WAppsGlobals.log.info('Archive "%s" was successfully patched' % archive_path)
 
-		except WResponsiveWriter.WriterTerminated:
+		except WResponsiveIO.IOTerminated:
 			os.unlink(archive_path)
 			WAppsGlobals.log.error(
 				'Unable to create archive "%s" - task terminated, changes discarded' % archive_path
@@ -165,6 +179,89 @@ class WBackupTarArchiver:
 			result.update(self.__writer_chain.meta())
 		return result
 
+
+class WBackupTarExtractor(WBasicTarIO):
+
+	@verify_type('paranoid', archive_path=str, io_read_rate=(float, int, None))
+	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_read_rate=lambda x: x is None or x > 0)
+	def __init__(self, archive_path, stop_event=None, io_read_rate=None):
+		WBasicTarIO.__init__(self, archive_path, stop_event=stop_event, io_rate=io_read_rate)
+
+	def io_read_rate(self):
+		return self.io_rate()
+
+	@verify_type(file_name=str)
+	@verify_value(file_name=lambda x: len(x) > 0)
+	def open_file(self, file_name):
+		chain = [
+			open(self.archive_path(), 'rb'),
+			WReaderChainLink(WThrottlingReader, throttling_to=self.io_read_rate()),
+		]
+
+		stop_event = self.stop_event()
+		if stop_event is not None:
+			chain.append(WReaderChainLink(WResponsiveReader, stop_event))
+
+		reader_chain = WReaderChain(*chain)
+
+		tar = tarfile.open(fileobj=reader_chain, mode='r:')
+		extracted_file = tar.extractfile(file_name)
+		if extracted_file is None:
+			raise RuntimeError(
+				'File "%s" was not found in archive "%s"' % (file_name, self.archive_path())
+			)
+		return extracted_file
+
+	def open_meta(self):
+		return self.open_file(WBackupMeta.Archive.__meta_filename__)
+
+
+class WBackupTarChecker(WBackupTarExtractor):
+
+	@verify_type('paranoid', archive_path=str, io_read_rate=(float, int, None))
+	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_read_rate=lambda x: x is None or x > 0)
+	def __init__(self, archive_path, stop_event=None, io_read_rate=None):
+		WBackupTarExtractor.__init__(self, archive_path, stop_event=stop_event, io_read_rate=io_read_rate)
+		self.__reader_chain = None
+
+	def reader_chain(self):
+		return self.__reader_chain
+
+	def check_details(self):
+		if self.__reader_chain is not None:
+			return self.__reader_chain.status()
+
+	def check_archive(self):
+		try:
+			meta_file_data = self.open_meta()
+			json_raw_data = meta_file_data.read()
+			meta_file_data.close()
+			json_data = json.loads(json_raw_data.decode())
+			inside_archive_name = json_data[WBackupMeta.Archive.MetaOptions.inside_archive_filename.value]
+
+			self.__reader_chain = WExtractorReaderChain(
+				self.open_file(inside_archive_name),
+				WReaderChainLink(
+					WHashCalculationReader,
+					json_data[WBackupMeta.Archive.MetaOptions.hash_algorithm.value]
+				),
+				WReaderChainLink(WArchiverThrottlingReader),
+				WReaderChainLink(WDiscardReaderResult)
+			)
+			self.__reader_chain.read()
+			calc_instance = self.__reader_chain.instance(WHashCalculationReader)
+			self.__reader_chain.close()
+
+			original_hash = json_data[WBackupMeta.Archive.MetaOptions.hash_value.value].upper()
+			calculated_hash = calc_instance.hexdigest().upper()
+			return original_hash == calculated_hash, original_hash, calculated_hash
+		except WResponsiveIO.IOTerminated:
+			WAppsGlobals.log.error(
+				'Unable to check archive "%s" - task terminated' % self.archive_path()
+			)
+			return
+		finally:
+			self.__reader_chain = None
 
 """
 __openssl_mode_re__ = re.compile('aes-([0-9]+)-(.+)')
