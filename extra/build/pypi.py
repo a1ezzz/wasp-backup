@@ -19,15 +19,14 @@ suggested_repo = ('pypi', 'test')
 
 
 if __name__ == '__main__':
-	os.system('%s --clear --target %s' % (clone_programm, pypy_build_dir))
+	assert(os.system('%s --clear --target %s' % (clone_programm, pypy_build_dir)) == 0)
 	os.chdir(pypy_build_dir)
 	print('Building package')
-	os.system('%s setup.py sdist' % python_interpr)
+	assert(os.system('%s setup.py sdist' % python_interpr) == 0)
 
 	if len(sys.argv) > 1:
 		repo = sys.argv[1]
 		if repo not in suggested_repo:
 			print('Warning. May be wrong repository was specified. Default repositories are: %s' % ', '.join(suggested_repo))
 		print('Uploading to "%s"' % repo)
-		os.system('twine upload -s dist/*.tar.gz -r %s' % repo)
-
+		assert(os.system('twine upload -s dist/*.tar.gz -r %s' % repo) == 0)

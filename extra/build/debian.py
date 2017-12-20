@@ -20,10 +20,10 @@ python_interpr = 'python3'
 
 
 if __name__ == '__main__':
-	os.system('%s --clear --target %s' % (clone_program, debian_build_dir))
+	assert(os.system('%s --clear --target %s' % (clone_program, debian_build_dir)) == 0)
 	debian_dir = os.path.join(debian_build_dir, 'debian')
-	os.system('%s --source %s --target %s' % (clone_program, debian_pkg_dir, debian_dir))
+	assert(os.system('%s --source %s --target %s' % (clone_program, debian_pkg_dir, debian_dir)) == 0)
 	os.chdir(debian_build_dir)
 	print('Building package')
-	os.system('dpkg-buildpackage')
+	assert(os.system('dpkg-buildpackage') == 0)
 
