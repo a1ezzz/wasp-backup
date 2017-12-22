@@ -31,8 +31,9 @@ from logging import getLogger
 
 from wasp_general.command.command import WCommandSet, WCommandProto
 
-from wasp_backup.create import WCreateBackupCommand
+from wasp_backup.file_backup import WFileBackupCommand
 from wasp_backup.check import WCheckBackupCommand
+from wasp_backup.program_backup import WProgramBackupCommand
 
 
 if __name__ == '__main__':
@@ -40,7 +41,8 @@ if __name__ == '__main__':
 	logger = getLogger(os.path.basename(sys.argv[0]))
 
 	command_set = WCommandSet()
-	command_set.commands().add(WCreateBackupCommand(logger))
+	command_set.commands().add(WFileBackupCommand(logger))
 	command_set.commands().add(WCheckBackupCommand(logger))
+	command_set.commands().add(WProgramBackupCommand(logger))
 
 	print(command_set.exec(WCommandProto.join_tokens(*(sys.argv[1:]))))

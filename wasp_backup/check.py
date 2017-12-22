@@ -32,8 +32,7 @@ from wasp_general.command.enhanced import WCommandArgumentDescriptor, WEnhancedC
 from wasp_general.command.result import WPlainCommandResult
 
 
-from wasp_backup.core import WBackupMeta
-from wasp_backup.archiver import WBackupTarChecker
+from wasp_backup.archiver import WArchiveIntegrityChecker
 
 
 class WCheckBackupCommand(WEnhancedCommand):
@@ -41,7 +40,7 @@ class WCheckBackupCommand(WEnhancedCommand):
 	__command__ = 'check'
 	__arguments__ = [
 		WCommandArgumentDescriptor(
-			'archive', required=True, multiple_values=False, meta_var='archive_path',
+			'backup-archive', required=True, multiple_values=False, meta_var='archive_path',
 			help_info='backup file to check'
 		),
 		WCommandArgumentDescriptor(
@@ -67,13 +66,13 @@ class WCheckBackupCommand(WEnhancedCommand):
 		return self.__checker
 
 	def _exec(self, command_arguments, **command_env):
-		archive = command_arguments['archive']
+		archive = command_arguments['backup-archive']
 		io_read_rate = None
 		if 'io-read-rate' in command_arguments.keys():
 			io_read_rate = command_arguments['io-read-rate']
 
 		try:
-			self.__checker = WBackupTarChecker(
+			self.__checker = WArchiveIntegrityChecker(
 				archive, self.__logger, stop_event=self.stop_event(), io_read_rate=io_read_rate
 			)
 			result, original_hash, calculated_hash = self.__checker.check_archive()

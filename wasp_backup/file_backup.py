@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# wasp_backup/create.py
+# wasp_backup/file_backup.py
 #
 # Copyright (C) 2017 the wasp-backup authors and contributors
 # <see AUTHORS file>
@@ -29,89 +29,29 @@ from wasp_backup.version import __status__
 
 from enum import Enum
 
-from wasp_general.verify import verify_type, verify_subclass
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.command.enhanced import WEnhancedCommand
 from wasp_general.command.result import WPlainCommandResult
 
 from wasp_backup.cipher import WBackupCipher
-from wasp_backup.core import WBackupMeta, cipher_name_validation
-from wasp_backup.file_archiver import WBackupLVMFileArchiver
+from wasp_backup.inside_tar_archiver import WLVMArchiveCreator
+from wasp_backup.common_args import __common_args__
 
 
-class WCreateBackupCommand(WEnhancedCommand):
+class WFileBackupCommand(WEnhancedCommand):
 
 	class SnapshotUsage(Enum):
 		auto = 'auto'
 		forced = 'forced'
 		disabled = 'disabled'
 
-	class EnumArgumentHelper(WCommandArgumentDescriptor.ArgumentCastingHelper):
-
-		@verify_subclass(enum_cls=Enum)
-		def __init__(self, enum_cls):
-			WCommandArgumentDescriptor.ArgumentCastingHelper.__init__(
-				self, casting_fn=self.cast_string
-			)
-			for item in enum_cls:
-				if isinstance(item.value, str) is False:
-					raise TypeError('Enum fields must bt str type')
-			self.__enum_cls = enum_cls
-
-		@verify_type(value=str)
-		def cast_string(self, value):
-			return self.__enum_cls(value)
-
-	class CompressionArgumentHelper(WCommandArgumentDescriptor.ArgumentCastingHelper):
-
-		def __init__(self):
-			WCommandArgumentDescriptor.ArgumentCastingHelper.__init__(
-				self, casting_fn=self.cast_string
-			)
-
-		@staticmethod
-		@verify_type(value=str)
-		def cast_string(value):
-			value = value.lower()
-			if value == 'gzip':
-				return WBackupMeta.Archive.CompressionMode.gzip
-			elif value == 'bzip2':
-				return WBackupMeta.Archive.CompressionMode.bzip2
-			elif value == 'disabled':
-				return
-			else:
-				raise ValueError('Invalid compression value')
-
-	class ArchivingTask:
-
-		def __init__(self, archiver, snapshot_force, snapshot_size, mount_directory):
-			self.__archiver = archiver
-			self.__snapshot_force = snapshot_force
-			self.__snapshot_size = snapshot_size
-			self.__mount_directory = mount_directory
-
-		def archiver(self):
-			return self.__archiver
-
-		def archive(self):
-			self.archiver().archive(
-				snapshot_force=self.__snapshot_force,
-				snapshot_size=self.__snapshot_size,
-				mount_directory=self.__mount_directory
-			)
-			return WPlainCommandResult(
-				'Archive "%s" was created successfully' % self.archiver().archive_path()
-			)
-
-	__command__ = 'create'
+	__command__ = 'file-backup'
 
 	__arguments__ = [
+		__common_args__['backup-archive'],
 		WCommandArgumentDescriptor(
-			'input', required=True, multiple_values=True, meta_var='input_path',
+			'input-files', required=True, multiple_values=True, meta_var='input_path',
 			help_info='files or directories to backup'
-		),
-		WCommandArgumentDescriptor(
-			'output', required=True, meta_var='output_filename', help_info='backup file path'
 		),
 		WCommandArgumentDescriptor(
 			'sudo', flag_mode=True,
@@ -123,7 +63,8 @@ class WCreateBackupCommand(WEnhancedCommand):
 			'One of: "auto" (backup will try to make snapshot for input files), '
 			'"forced" (if snapshot can not be created - backup will fail), '
 			'"disabled" (backup will not try to create a snapshot)',
-			casting_helper=EnumArgumentHelper(SnapshotUsage), default_value=SnapshotUsage.auto.value
+			casting_helper=WCommandArgumentDescriptor.EnumArgumentHelper(SnapshotUsage),
+			default_value=SnapshotUsage.auto.value
 		),
 		WCommandArgumentDescriptor(
 			'snapshot-volume-size', meta_var='fraction_size',
@@ -136,30 +77,10 @@ class WCreateBackupCommand(WEnhancedCommand):
 			'snapshot-mount-dir', meta_var='mount_path',
 			help_info='path where snapshot volume should be mount. It is random directory by default'
 		),
-		WCommandArgumentDescriptor(
-			'compression', meta_var='compression_type',
-			help_info='compression option. One of: "gzip", "bzip2" or "disabled". It is disabled '
-			'by default', casting_helper=CompressionArgumentHelper()
-		),
-		WCommandArgumentDescriptor(
-			'password', meta_var='encryption_password',
-			help_info='password to encrypt backup. Backup is not encrypted by default'
-		),
-		WCommandArgumentDescriptor(
-			'cipher_algorithm', meta_var='algorithm_name',
-			help_info='cipher that will be used for encrypt (backup will not be encrypted if '
-			'password was not set). It is "AES-256-CBC" by default',
-			casting_helper=WCommandArgumentDescriptor.StringArgumentCastingHelper(
-				validate_fn=cipher_name_validation
-			),
-			default_value='AES-256-CBC'
-		),
-		WCommandArgumentDescriptor(
-			'io-write-rate', meta_var='maximum writing rate',
-			help_info='use this parameter to limit disk I/O load (bytes per second). You can use '
-			'suffixes like "K" for kibibytes, "M" for mebibytes, "G" for gibibytes, "T" for tebibytes for '
-			'convenience ', casting_helper=WCommandArgumentDescriptor.DataSizeArgumentHelper()
-		),
+		__common_args__['compression'],
+		__common_args__['password'],
+		__common_args__['cipher_algorithm'],
+		__common_args__['io-write-rate']
 	]
 
 	def __init__(self, logger):
@@ -199,14 +120,14 @@ class WCreateBackupCommand(WEnhancedCommand):
 		if 'io-write-rate' in command_arguments.keys():
 			io_write_rate = command_arguments['io-write-rate']
 
-		self.__archiver = WBackupLVMFileArchiver(
-			command_arguments['output'], self.__logger, *command_arguments['input'],
+		self.__archiver = WLVMArchiveCreator(
+			command_arguments['backup-archive'], self.__logger, *command_arguments['input-files'],
 			compression_mode=compression_mode, sudo=command_arguments['sudo'], cipher=cipher,
 			io_write_rate=io_write_rate, stop_event=self.stop_event()
 		)
 
-		snapshot_disabled = (command_arguments['snapshot'] == WCreateBackupCommand.SnapshotUsage.disabled)
-		snapshot_force = (command_arguments['snapshot'] == WCreateBackupCommand.SnapshotUsage.forced)
+		snapshot_disabled = (command_arguments['snapshot'] == WFileBackupCommand.SnapshotUsage.disabled)
+		snapshot_force = (command_arguments['snapshot'] == WFileBackupCommand.SnapshotUsage.forced)
 
 		try:
 			self.__archiver.archive(

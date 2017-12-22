@@ -29,8 +29,6 @@ from wasp_backup.version import __status__
 
 from enum import Enum
 
-from wasp_general.crypto.aes import WAESMode
-
 
 class WBackupMeta:
 
@@ -41,8 +39,11 @@ class WBackupMeta:
 			bzip2 = 'bz2'
 
 		class MetaOptions(Enum):
-			inside_archive_filename = 'inside_archive_filename'
+			inside_filename = 'inside_filename'
+			inside_tar = 'inside_tar'
 			archived_files = 'archived_files'
+			archived_program = 'archived_program'
+			compression_mode = 'compression_mode'
 			hash_algorithm = 'hash_algorithm'
 			hash_value = 'hash_value'
 			snapshot_used = 'snapshot_used'
@@ -55,18 +56,9 @@ class WBackupMeta:
 
 		__meta_filename__ = 'meta.json'
 		__maximum_meta_filesize__ = 50 * 1024 * 1024
-		__inside_archive_basic_filename__ = 'archive'
+		__basic_inside_filename__ = 'archive'
 		__file_mode__ = int('660', base=8)
 		__hash_generator_name__ = 'MD5'
-
-		@classmethod
-		def inside_archive_filename(cls, compression_mode):
-			if compression_mode is None:
-				return WBackupMeta.Archive.__inside_archive_basic_filename__ + '.tar'
-			if isinstance(compression_mode, WBackupMeta.Archive.CompressionMode) is True:
-				suffix = compression_mode.value
-				return WBackupMeta.Archive.__inside_archive_basic_filename__ + '.tar.' + suffix
-			raise TypeError('Invalid compression mode')
 
 	class LVMSnapshot:
 		__default_snapshot_size__ = 0.1
@@ -86,12 +78,3 @@ class WArchiverIOStatusProvider:
 
 	def status(self):
 		return None
-
-
-def cipher_name_validation(cipher_name):
-	try:
-		if WAESMode.parse_cipher_name(cipher_name) is not None:
-			return True
-	except ValueError:
-		pass
-	return False

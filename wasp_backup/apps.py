@@ -35,16 +35,17 @@ from wasp_launcher.core_scheduler import WSchedulerTaskSourceInstaller, WLaunche
 from wasp_launcher.core_broker import WCommandKit, WBrokerCommand, WResponsiveBrokerCommand
 
 from wasp_backup.core import WBackupMeta
-from wasp_backup.create import WCreateBackupCommand
+from wasp_backup.file_backup import WFileBackupCommand
 from wasp_backup.check import WCheckBackupCommand
+from wasp_backup.program_backup import WProgramBackupCommand
 
 
 class WResponsiveCreateBackupCommand(WResponsiveBrokerCommand):
 
-	class CreateBackupCommand(WCreateBackupCommand, WBrokerCommand):
+	class FileBackupCommand(WFileBackupCommand, WBrokerCommand):
 
 		def __init__(self):
-			WCreateBackupCommand.__init__(self, WAppsGlobals.log)
+			WFileBackupCommand.__init__(self, WAppsGlobals.log)
 			WBrokerCommand.__init__(
 				self, self.command_token(), *self.argument_descriptors(),
 				relationships=self.relationships()
@@ -75,7 +76,7 @@ class WResponsiveCreateBackupCommand(WResponsiveBrokerCommand):
 
 	def __init__(self):
 		WResponsiveBrokerCommand.__init__(
-			self, WResponsiveCreateBackupCommand.CreateBackupCommand(),
+			self, WResponsiveCreateBackupCommand.FileBackupCommand(),
 			scheduled_task_cls=WResponsiveCreateBackupCommand.ScheduledTask
 		)
 
@@ -119,6 +120,47 @@ class WResponsiveCheckBackupCommand(WResponsiveBrokerCommand):
 		)
 
 
+class WResponsiveProgramBackupCommand(WResponsiveBrokerCommand):
+
+	class ProgramBackupCommand(WProgramBackupCommand, WBrokerCommand):
+
+		def __init__(self):
+			WProgramBackupCommand.__init__(self, WAppsGlobals.log)
+			WBrokerCommand.__init__(
+				self, self.command_token(), *self.argument_descriptors(),
+				relationships=self.relationships()
+			)
+
+		def brief_description(self):
+			return 'create backup archive of stdout of program'
+
+	class ScheduledTask(WResponsiveBrokerCommand.ScheduledTask):
+
+		def state_details(self):
+			archiver = self.basic_command().archiver()
+			if archiver is not None:
+				return 'Archiving is not running. May be finalizing'
+
+			result = ''
+			details = archiver.archiving_details()
+			if details is not None:
+				result += '\n' + details
+			return result
+
+		def thread_started(self):
+			self.basic_command().stop_event(self.stop_event())
+			WResponsiveBrokerCommand.ScheduledTask.thread_started(self)
+
+	__task_source_name__ = WBackupMeta.__task_source_name__
+	__scheduler_instance__ = WBackupMeta.__scheduler_instance_name__
+
+	def __init__(self):
+		WResponsiveBrokerCommand.__init__(
+			self, WResponsiveProgramBackupCommand.ProgramBackupCommand(),
+			scheduled_task_cls=WResponsiveProgramBackupCommand.ScheduledTask
+		)
+
+
 class WBackupBrokerCommandKit(WCommandKit):
 
 	__registry_tag__ = 'com.binblob.wasp-backup.broker-commands'
@@ -132,6 +174,7 @@ class WBackupBrokerCommandKit(WCommandKit):
 		return (
 			WResponsiveCreateBackupCommand(),
 			WResponsiveCheckBackupCommand(),
+			WResponsiveProgramBackupCommand()
 		)
 
 
