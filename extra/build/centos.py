@@ -3,19 +3,20 @@
 import os
 import re
 import shutil
+from os.path import abspath
 
 
 script_dir = os.path.dirname(__file__)
-root_dir = os.path.abspath(os.path.join(script_dir, '..', '..'))
+root_dir = abspath(os.path.join(script_dir, '..', '..'))
 
 centos_pkg_dir_name = 'centos_pkg'
-centos_pkg_dir = os.path.join(script_dir, centos_pkg_dir_name)
+centos_pkg_dir = abspath(os.path.join(script_dir, centos_pkg_dir_name))
 
 centos_build_dir_name = 'centos_build'
-centos_build_dir = os.path.join(script_dir, centos_build_dir_name)
+centos_build_dir = abspath(os.path.join(script_dir, centos_build_dir_name))
 
 clone_program_name = 'clone.py'
-clone_program = os.path.join(script_dir, clone_program_name)
+clone_program = abspath(os.path.join(script_dir, clone_program_name))
 
 rpmbuild_required_directories = ('BUILD', 'RPMS', 'SOURCES', 'SPECS', 'SRPMS', 'PACKAGING')
 
