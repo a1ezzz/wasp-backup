@@ -27,15 +27,15 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
-from wasp_general.command.enhanced import WCommandArgumentDescriptor, WEnhancedCommand
-
+from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.command.result import WPlainCommandResult
 
 
+from wasp_backup.command_common import WBackupCommand
 from wasp_backup.archiver import WArchiveIntegrityChecker
 
 
-class WCheckBackupCommand(WEnhancedCommand):
+class WCheckBackupCommand(WBackupCommand):
 
 	__command__ = 'check'
 	__arguments__ = [
@@ -50,12 +50,6 @@ class WCheckBackupCommand(WEnhancedCommand):
 			'convenience ', casting_helper=WCommandArgumentDescriptor.DataSizeArgumentHelper()
 		)
 	]
-
-	def __init__(self, logger):
-		WEnhancedCommand.__init__(self, self.__command__, *self.__arguments__)
-		self.__logger = logger
-		self.__stop_event = None
-		self.__checker = None
 
 	def stop_event(self, value=None):
 		if value is not None:
