@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# wasp_backup/common_args.py
+# wasp_backup/command_common.py
 #
 # Copyright (C) 2017 the wasp-backup authors and contributors
 # <see AUTHORS file>
@@ -27,9 +27,15 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
+import os
+import sys
+import tempfile
+
 from wasp_general.verify import verify_type
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
+from wasp_general.command.result import WPlainCommandResult
+from wasp_general.command.enhanced import WEnhancedCommand
 
 from wasp_backup.core import WBackupMeta
 
@@ -70,6 +76,11 @@ __common_args__ = {
 		help_info='backup file path'
 	),
 
+	'input-files': WCommandArgumentDescriptor(
+		'input-files', required=True, multiple_values=True, meta_var='input_path',
+		help_info='files or directories to backup'
+	),
+
 	'input-program': WCommandArgumentDescriptor(
 		'input-program', required=True, multiple_values=False, meta_var='program_command',
 		help_info='program which output will be backed up'
@@ -101,5 +112,90 @@ __common_args__ = {
 		help_info='use this parameter to limit disk I/O load (bytes per second). You can use '
 		'suffixes like "K" for kibibytes, "M" for mebibytes, "G" for gibibytes, "T" for tebibytes for '
 		'convenience ', casting_helper=WCommandArgumentDescriptor.DataSizeArgumentHelper()
-	)
+	),
+
+	'copy-to': WCommandArgumentDescriptor(
+		'copy-to', meta_var='URL', help_info='Location to copy backup archive to'
+	),
+
+	'notify-app': WCommandArgumentDescriptor(
+		'notify-app', meta_var='app_path', help_info='Application that will be called on archive creation'
+	),
 }
+
+
+# noinspection PyAbstractClass
+class WBackupCommand(WEnhancedCommand):
+
+	__command__ = None
+
+	__arguments__ = tuple()
+
+	def __init__(self, logger):
+		WEnhancedCommand.__init__(self, self.__command__, *self.__arguments__)
+		self.__logger = logger
+		self.__stop_event = None
+		self.__archiver = None
+
+	def logger(self):
+		return self.__logger
+
+	def stop_event(self, value=None):
+		if value is not None:
+			self.__stop_event = value
+		return self.__stop_event
+
+	def archiver(self):
+		return self.__archiver
+
+	def set_archiver(self, value):
+		self.__archiver = value
+
+	@classmethod
+	def process_backup_result(cls, archiver, command_arguments):
+		copy_to = None
+		if 'copy-to' in command_arguments.keys():
+			copy_to = command_arguments['copy-to']
+
+		notify_app = None
+		if 'notify-app' in command_arguments.keys():
+			notify_app = command_arguments['notify-app']
+
+		def notify():
+			if notify_app is not None:
+				first_fork_pid = os.fork()
+				if first_fork_pid == 0:
+					second_fork_pid = os.fork()
+					if second_fork_pid == 0:
+
+						meta_tempfile = tempfile.NamedTemporaryFile(delete=False)
+						meta_tempfile.write(archiver.binary_meta())
+						meta_tempfile.close()
+
+						os.execlp(
+							notify_app,
+							os.path.basename(notify_app),
+							archiver.archive_path(),
+							meta_tempfile.name
+						)
+					else:
+						sys.exit(0)
+				else:
+					os.waitpid(first_fork_pid, 0)
+
+		def command_result(result):
+			notify()
+			return WPlainCommandResult(result)
+
+		if copy_to is None:
+			return command_result('Archive "%s" was created successfully' % archiver.archive_path())
+
+		if WBackupMeta.__uploader_collection__.upload(copy_to, archiver.archive_path()) is True:
+			return command_result(
+				'Archive "%s" was created and uploaded successfully' % archiver.archive_path()
+			)
+
+		return command_result(
+			'Archive "%s" was created successfully. But it fails to upload archive to destination' %
+			archiver.archive_path()
+		)
