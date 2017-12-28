@@ -118,6 +118,11 @@ __common_args__ = {
 		'copy-to', meta_var='URL', help_info='Location to copy backup archive to'
 	),
 
+	'copy-fail': WCommandArgumentDescriptor(
+		'copy-fail', flag_mode=True, help_info='If specified, then backup will fail if copy operation fails. '
+		'(But local archive would not be deleted any way)',
+	),
+
 	'notify-app': WCommandArgumentDescriptor(
 		'notify-app', meta_var='app_path', help_info='Application that will be called on archive creation'
 	),
@@ -126,6 +131,9 @@ __common_args__ = {
 
 # noinspection PyAbstractClass
 class WBackupCommand(WEnhancedCommand):
+
+	class UploadFailed(Exception):
+		pass
 
 	__command__ = None
 
@@ -161,6 +169,10 @@ class WBackupCommand(WEnhancedCommand):
 		if 'notify-app' in command_arguments.keys():
 			notify_app = command_arguments['notify-app']
 
+		copy_fail = False
+		if 'copy-fail' in command_arguments.keys():
+			copy_fail = command_arguments['copy-fail']
+
 		def notify():
 			if notify_app is not None:
 				first_fork_pid = os.fork()
@@ -194,6 +206,9 @@ class WBackupCommand(WEnhancedCommand):
 			return command_result(
 				'Archive "%s" was created and uploaded successfully' % archiver.archive_path()
 			)
+
+		if copy_fail is True:
+			raise WBackupCommand.UploadFailed('Unable to upload archive "%s"' % archiver.archive_path())
 
 		return command_result(
 			'Archive "%s" was created successfully. But it fails to upload archive to destination' %

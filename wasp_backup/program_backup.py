@@ -49,6 +49,7 @@ class WProgramBackupCommand(WBackupCommand):
 		__common_args__['cipher_algorithm'],
 		__common_args__['io-write-rate'],
 		__common_args__['copy-to'],
+		__common_args__['copy-fail'],
 		__common_args__['notify-app']
 	)
 
