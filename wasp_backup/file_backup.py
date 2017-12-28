@@ -30,15 +30,13 @@ from wasp_backup.version import __status__
 from enum import Enum
 
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
-from wasp_general.command.enhanced import WEnhancedCommand
-from wasp_general.command.result import WPlainCommandResult
 
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.inside_tar_archiver import WLVMArchiveCreator
-from wasp_backup.common_args import __common_args__
+from wasp_backup.command_common import __common_args__, WBackupCommand
 
 
-class WFileBackupCommand(WEnhancedCommand):
+class WFileBackupCommand(WBackupCommand):
 
 	class SnapshotUsage(Enum):
 		auto = 'auto'
@@ -47,12 +45,9 @@ class WFileBackupCommand(WEnhancedCommand):
 
 	__command__ = 'file-backup'
 
-	__arguments__ = [
+	__arguments__ = (
 		__common_args__['backup-archive'],
-		WCommandArgumentDescriptor(
-			'input-files', required=True, multiple_values=True, meta_var='input_path',
-			help_info='files or directories to backup'
-		),
+		__common_args__['input-files'],
 		WCommandArgumentDescriptor(
 			'sudo', flag_mode=True,
 			help_info='use "sudo" command for privilege promotion. "sudo" may be used for snapshot '
@@ -80,22 +75,10 @@ class WFileBackupCommand(WEnhancedCommand):
 		__common_args__['compression'],
 		__common_args__['password'],
 		__common_args__['cipher_algorithm'],
-		__common_args__['io-write-rate']
-	]
-
-	def __init__(self, logger):
-		WEnhancedCommand.__init__(self, self.__command__, *self.__arguments__)
-		self.__logger = logger
-		self.__archiver = None
-		self.__stop_event = None
-
-	def archiver(self):
-		return self.__archiver
-
-	def stop_event(self, value=None):
-		if value is not None:
-			self.__stop_event = value
-		return self.__stop_event
+		__common_args__['io-write-rate'],
+		__common_args__['copy-to'],
+		__common_args__['notify-app']
+	)
 
 	def _exec(self, command_arguments, **command_env):
 		compression_mode = None
@@ -120,24 +103,27 @@ class WFileBackupCommand(WEnhancedCommand):
 		if 'io-write-rate' in command_arguments.keys():
 			io_write_rate = command_arguments['io-write-rate']
 
-		self.__archiver = WLVMArchiveCreator(
-			command_arguments['backup-archive'], self.__logger, *command_arguments['input-files'],
+		backup_archive = command_arguments['backup-archive']
+
+		archiver = WLVMArchiveCreator(
+			backup_archive, self.logger(), *command_arguments['input-files'],
 			compression_mode=compression_mode, sudo=command_arguments['sudo'], cipher=cipher,
 			io_write_rate=io_write_rate, stop_event=self.stop_event()
 		)
+		self.set_archiver(archiver)
 
 		snapshot_disabled = (command_arguments['snapshot'] == WFileBackupCommand.SnapshotUsage.disabled)
 		snapshot_force = (command_arguments['snapshot'] == WFileBackupCommand.SnapshotUsage.forced)
 
 		try:
-			self.__archiver.archive(
+			archiver.archive(
 				disable_snapshot=snapshot_disabled,
 				snapshot_force=snapshot_force,
 				snapshot_size=snapshot_size,
 				mount_directory=snapshot_mount_dir
 			)
-			return WPlainCommandResult(
-				'Archive "%s" was created successfully' % self.__archiver.archive_path()
-			)
+
+			return self.process_backup_result(archiver, command_arguments)
+
 		finally:
-			self.__archiver = None
+			self.set_archiver(None)
