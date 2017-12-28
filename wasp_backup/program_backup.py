@@ -28,19 +28,17 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 from wasp_backup.version import __status__
 
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
-from wasp_general.command.enhanced import WEnhancedCommand
-from wasp_general.command.result import WPlainCommandResult
 
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.popen_archiver import WPopenArchiveCreator
-from wasp_backup.common_args import __common_args__
+from wasp_backup.command_common import __common_args__, WBackupCommand
 
 
-class WProgramBackupCommand(WEnhancedCommand):
+class WProgramBackupCommand(WBackupCommand):
 
 	__command__ = 'program-backup'
 
-	__arguments__ = [
+	__arguments__ = (
 		__common_args__['backup-archive'],
 		WCommandArgumentDescriptor(
 			'input-program', required=True, multiple_values=False, meta_var='program_command',
@@ -49,22 +47,10 @@ class WProgramBackupCommand(WEnhancedCommand):
 		__common_args__['compression'],
 		__common_args__['password'],
 		__common_args__['cipher_algorithm'],
-		__common_args__['io-write-rate']
-	]
-
-	def __init__(self, logger):
-		WEnhancedCommand.__init__(self, self.__command__, *self.__arguments__)
-		self.__logger = logger
-		self.__archiver = None
-		self.__stop_event = None
-
-	def archiver(self):
-		return self.__archiver
-
-	def stop_event(self, value=None):
-		if value is not None:
-			self.__stop_event = value
-		return self.__stop_event
+		__common_args__['io-write-rate'],
+		__common_args__['copy-to'],
+		__common_args__['notify-app']
+	)
 
 	def _exec(self, command_arguments, **command_env):
 		compression_mode = None
@@ -81,16 +67,15 @@ class WProgramBackupCommand(WEnhancedCommand):
 		if 'io-write-rate' in command_arguments.keys():
 			io_write_rate = command_arguments['io-write-rate']
 
-		self.__archiver = WPopenArchiveCreator(
-			command_arguments['input-program'], command_arguments['backup-archive'], self.__logger,
+		backup_archive = command_arguments['backup-archive']
+		archiver = WPopenArchiveCreator(
+			command_arguments['input-program'], backup_archive, self.logger(),
 			compression_mode=compression_mode, cipher=cipher, io_write_rate=io_write_rate,
 			stop_event=self.stop_event()
 		)
-
+		self.set_archiver(archiver)
 		try:
-			self.__archiver.archive()
-			return WPlainCommandResult(
-				'Archive "%s" was created successfully' % self.__archiver.archive_path()
-			)
+			archiver.archive()
+			return self.process_backup_result(archiver, command_arguments)
 		finally:
-			self.__archiver = None
+			self.set_archiver(None)
