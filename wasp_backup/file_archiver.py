@@ -23,7 +23,7 @@
 # TODO: write tests for the code
 
 # noinspection PyUnresolvedReferences
-from wasp_backup.archiver import WBasicArchiveCreator
+from wasp_backup.version import __version__
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
@@ -33,6 +33,7 @@ from wasp_general.verify import verify_type, verify_value
 
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.core import WBackupMeta
+from wasp_backup.archiver import WBasicArchiveCreator
 
 
 class WFileArchiveCreator(WBasicArchiveCreator):
