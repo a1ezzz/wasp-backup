@@ -43,6 +43,7 @@ class WPopenArchiveCreator(WFileArchiveCreator):
 			while len(read_buffer) > 0:
 				fo.write(read_buffer)
 				read_buffer = pipe.stdout.read(buffer_size)
+
 	def meta(self):
 		result = WFileArchiveCreator.meta(self)
 		if WBackupMeta.Archive.MetaOptions.archived_files in result:
