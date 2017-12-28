@@ -67,6 +67,7 @@ class WBackupMeta:
 		__hash_generator_name__ = 'MD5'
 
 	class NotificationOptions(Enum):
+		created_archive = 'created_archive'
 		backup_duration = 'backup_duration'
 		copy_to = 'copy_to'
 		copy_completion = 'copy_completion'

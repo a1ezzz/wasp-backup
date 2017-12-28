@@ -241,6 +241,7 @@ class WCreateBackupCommand(WBackupCommand):
 			if second_fork_pid == 0:
 
 				meta_data = archiver.meta()
+				meta_data[WBackupMeta.NotificationOptions.created_archive] = archiver.archive_path()
 				meta_data[WBackupMeta.NotificationOptions.backup_duration] = backup_duration
 				meta_data[WBackupMeta.NotificationOptions.total_archive_size] = \
 					os.stat(archiver.archive_path()).st_size
@@ -263,7 +264,6 @@ class WCreateBackupCommand(WBackupCommand):
 				os.execlp(
 					notify_app,
 					os.path.basename(notify_app),
-					archiver.archive_path(),
 					meta_tempfile.name
 				)
 			else:
