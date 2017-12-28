@@ -46,9 +46,12 @@ class WBackupMeta:
 			inside_tar = 'inside_tar'
 			archived_files = 'archived_files'
 			archived_program = 'archived_program'
+			uncompressed_archive_size = 'uncompressed_archive_size'  # size of uncompressed data
+			# (for inside_tar archive, this is a size of uncompressed inside tar, which is rounded to 10240)
 			compression_mode = 'compression_mode'
 			hash_algorithm = 'hash_algorithm'
-			hash_value = 'hash_value'
+			hash_value = 'hash_value'  # hash value of uncompressed inside archive (for
+			# inside_tar archive, this is a hash of uncompressed inside tar)
 			snapshot_used = 'snapshot_used'
 			original_lv_uuid = 'original_lv_uuid'
 			io_write_rate = 'io_write_rate'
@@ -62,6 +65,13 @@ class WBackupMeta:
 		__basic_inside_file_name__ = 'archive'
 		__file_mode__ = int('660', base=8)
 		__hash_generator_name__ = 'MD5'
+
+	class NotificationOptions(Enum):
+		backup_duration = 'backup_duration'
+		copy_to = 'copy_to'
+		copy_completion = 'copy_completion'
+		copy_duration = 'copy_duration'
+		total_archive_size = 'total_archive_size'
 
 	class LVMSnapshot:
 		__default_snapshot_size__ = 0.1
@@ -78,12 +88,18 @@ class WBackupMetaProvider:
 	def meta(self):
 		return {}
 
-	def binary_meta(self):
+	@classmethod
+	def encode_meta(cls, meta, strict_cls=None):
 		result = {}
-		for meta_key, meta_value in self.meta().items():
-			if isinstance(meta_key, WBackupMeta.Archive.MetaOptions) is False:
-				raise TypeError('Invalid meta key spotted')
-			result[meta_key.value] = meta_value
+		for meta_key, meta_value in meta.items():
+			if strict_cls is not None:
+				if isinstance(meta_key, strict_cls) is True:
+					result[meta_key.value] = meta_value
+				else:
+					raise TypeError('Invalid meta key spotted')
+			else:
+				result[meta_key] = meta_value
+
 		return json.dumps(result).encode()
 
 

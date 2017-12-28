@@ -41,6 +41,8 @@ from wasp_backup.core import WBackupMeta
 from wasp_backup.io import WMetaTarPatcher, WArchiverThrottlingWriter, WArchiverHashCalculationWriter
 from wasp_backup.io import WArchiverAESCipher, WArchiverThrottlingReader
 from wasp_backup.io import WArchiverWriterChain, WExtractorReaderChain, WBackupMetaProvider, WBasicArchiverIO
+from wasp_backup.io import WArchiverDataCounter
+
 
 """
 
@@ -113,6 +115,7 @@ class WBasicArchiveCreator(WBasicArchiverIO, WBackupMetaProvider):
 			WWriterChainLink(
 				WMetaTarPatcher, inside_archive_name, self, compression_mode=self.compression_mode()
 			),
+			WWriterChainLink(WArchiverDataCounter),
 			WWriterChainLink(WArchiverHashCalculationWriter)
 		]
 

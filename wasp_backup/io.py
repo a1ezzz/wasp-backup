@@ -223,7 +223,7 @@ class WMetaTarPatcher(WTarPatcher):
 		inside_file_size += inside_data_block_delta
 
 		meta_provider = self.meta_provider()
-		meta_data = meta_provider.binary_meta()
+		meta_data = meta_provider.encode_meta(meta_provider.meta(), strict_cls=WBackupMeta.Archive.MetaOptions)
 
 		if len(meta_data) > WBackupMeta.Archive.__maximum_meta_file_size__:
 			raise RuntimeError('Meta data corrupted - too big')
@@ -294,6 +294,18 @@ class WArchiverThrottlingWriter(WThrottlingWriter, WBackupMetaProvider, WArchive
 		result = 'Write rate: %s/sec\n' % data_size_formatter(math.ceil(self.rate()))
 		result += 'Bytes processed: %i' % self.bytes_processed()
 		return result
+
+
+class WArchiverDataCounter(WThrottlingWriter, WBackupMetaProvider):
+
+	def __init__(self, raw):
+		WThrottlingWriter.__init__(self, raw)
+		WBackupMetaProvider.__init__(self)
+
+	def meta(self):
+		return {
+			WBackupMeta.Archive.MetaOptions.uncompressed_archive_size: self.bytes_processed()
+		}
 
 
 class WArchiverThrottlingReader(WThrottlingReader, WArchiverIOStatusProvider):

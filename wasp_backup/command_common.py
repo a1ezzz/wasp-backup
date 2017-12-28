@@ -29,6 +29,7 @@ from wasp_backup.version import __status__
 
 import os
 import sys
+from datetime import datetime
 import tempfile
 
 from wasp_general.verify import verify_type
@@ -37,7 +38,7 @@ from wasp_general.crypto.aes import WAESMode
 from wasp_general.command.result import WPlainCommandResult
 from wasp_general.command.enhanced import WEnhancedCommand
 
-from wasp_backup.core import WBackupMeta
+from wasp_backup.core import WBackupMeta, WBackupMetaProvider
 
 
 class WCompressionArgumentHelper(WCommandArgumentDescriptor.ArgumentCastingHelper):
@@ -132,9 +133,6 @@ __common_args__ = {
 # noinspection PyAbstractClass
 class WBackupCommand(WEnhancedCommand):
 
-	class UploadFailed(Exception):
-		pass
-
 	__command__ = None
 
 	__arguments__ = tuple()
@@ -143,7 +141,6 @@ class WBackupCommand(WEnhancedCommand):
 		WEnhancedCommand.__init__(self, self.__command__, *self.__arguments__)
 		self.__logger = logger
 		self.__stop_event = None
-		self.__archiver = None
 
 	def logger(self):
 		return self.__logger
@@ -153,64 +150,124 @@ class WBackupCommand(WEnhancedCommand):
 			self.__stop_event = value
 		return self.__stop_event
 
+
+# noinspection PyAbstractClass
+class WCreateBackupCommand(WBackupCommand):
+
+	class UploadFailed(Exception):
+		pass
+
+	def __init__(self, logger):
+		WBackupCommand.__init__(self, logger)
+		self.__archiver = None
+
 	def archiver(self):
 		return self.__archiver
 
 	def set_archiver(self, value):
 		self.__archiver = value
 
-	@classmethod
-	def process_backup_result(cls, archiver, command_arguments):
-		copy_to = None
-		if 'copy-to' in command_arguments.keys():
-			copy_to = command_arguments['copy-to']
+	def _create_backup(self, command_arguments, *args, **kwargs):
+		archiver = self.archiver()
+		if archiver is None:
+			raise RuntimeError('Archiver must be set before call')
 
-		notify_app = None
-		if 'notify-app' in command_arguments.keys():
-			notify_app = command_arguments['notify-app']
+		try:
+			backup_started_at = datetime.utcnow()
+			archiver.archive(*args, **kwargs)
+			backup_duration = (datetime.utcnow() - backup_started_at).seconds
 
-		copy_fail = False
-		if 'copy-fail' in command_arguments.keys():
-			copy_fail = command_arguments['copy-fail']
+			copy_to = None
+			if 'copy-to' in command_arguments.keys():
+				copy_to = command_arguments['copy-to']
 
-		def notify():
-			if notify_app is not None:
-				first_fork_pid = os.fork()
-				if first_fork_pid == 0:
-					second_fork_pid = os.fork()
-					if second_fork_pid == 0:
+			notify_app = None
+			if 'notify-app' in command_arguments.keys():
+				notify_app = command_arguments['notify-app']
 
-						meta_tempfile = tempfile.NamedTemporaryFile(delete=False)
-						meta_tempfile.write(archiver.binary_meta())
-						meta_tempfile.close()
+			copy_fail = False
+			if 'copy-fail' in command_arguments.keys():
+				copy_fail = command_arguments['copy-fail']
 
-						os.execlp(
-							notify_app,
-							os.path.basename(notify_app),
-							archiver.archive_path(),
-							meta_tempfile.name
-						)
-					else:
-						sys.exit(0)
-				else:
-					os.waitpid(first_fork_pid, 0)
+			if copy_to is None:
+				return self.__handle_backup_result(
+					'Archive "%s" was created successfully' % archiver.archive_path(),
+					notify_app=notify_app,
+					backup_duration=backup_duration
+				)
 
-		def command_result(result):
-			notify()
-			return WPlainCommandResult(result)
+			copy_started_at = datetime.utcnow()
+			copy_result = WBackupMeta.__uploader_collection__.upload(copy_to, archiver.archive_path())
+			copy_duration = (datetime.utcnow() - copy_started_at).seconds
 
-		if copy_to is None:
-			return command_result('Archive "%s" was created successfully' % archiver.archive_path())
+			if copy_result is True:
+				backup_result = \
+					'Archive "%s" was created and uploaded successfully' % archiver.archive_path()
+			elif copy_fail is False:
+				backup_result = \
+					'Archive "%s" was created successfully. But it fails to upload archive to ' \
+					'destination' % archiver.archive_path()
+			else:
+				raise WCreateBackupCommand.UploadFailed(
+					'Unable to upload archive "%s"' % archiver.archive_path()
+				)
 
-		if WBackupMeta.__uploader_collection__.upload(copy_to, archiver.archive_path()) is True:
-			return command_result(
-				'Archive "%s" was created and uploaded successfully' % archiver.archive_path()
+			return self.__handle_backup_result(
+				backup_result,
+				notify_app=notify_app,
+				backup_duration=backup_duration,
+				copy_to=copy_to,
+				copy_complete=copy_result,
+				copy_duration=copy_duration
 			)
 
-		if copy_fail is True:
-			raise WBackupCommand.UploadFailed('Unable to upload archive "%s"' % archiver.archive_path())
+		finally:
+			self.set_archiver(None)
 
-		return command_result(
-			'Archive "%s" was created successfully. But it fails to upload archive to destination' %
-			archiver.archive_path()
-		)
+	def __handle_backup_result(
+		self, str_result, notify_app=None, backup_duration=None, copy_to=None, copy_complete=None,
+		copy_duration=None
+	):
+		archiver = self.archiver()
+		if archiver is None:
+			raise RuntimeError('Archiver must be set before call')
+
+		if notify_app is None:
+			return WPlainCommandResult(str_result)
+
+		first_fork_pid = os.fork()
+		if first_fork_pid == 0:
+			second_fork_pid = os.fork()
+			if second_fork_pid == 0:
+
+				meta_data = archiver.meta()
+				meta_data[WBackupMeta.NotificationOptions.backup_duration] = backup_duration
+				meta_data[WBackupMeta.NotificationOptions.total_archive_size] = \
+					os.stat(archiver.archive_path()).st_size
+				meta_data[WBackupMeta.NotificationOptions.copy_to] = copy_to
+				meta_data[WBackupMeta.NotificationOptions.copy_completion] = \
+					copy_complete
+				meta_data[WBackupMeta.NotificationOptions.copy_duration] = copy_duration
+
+				binary_meta = WBackupMetaProvider.encode_meta(
+					meta_data, strict_cls=(
+						WBackupMeta.Archive.MetaOptions,
+						WBackupMeta.NotificationOptions
+					)
+				)
+
+				meta_tempfile = tempfile.NamedTemporaryFile(delete=False)
+				meta_tempfile.write(binary_meta)
+				meta_tempfile.close()
+
+				os.execlp(
+					notify_app,
+					os.path.basename(notify_app),
+					archiver.archive_path(),
+					meta_tempfile.name
+				)
+			else:
+				sys.exit(0)
+		else:
+			os.waitpid(first_fork_pid, 0)
+		return WPlainCommandResult(str_result)

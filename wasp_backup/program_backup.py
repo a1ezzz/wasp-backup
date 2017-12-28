@@ -31,10 +31,10 @@ from wasp_general.command.enhanced import WCommandArgumentDescriptor
 
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.popen_archiver import WPopenArchiveCreator
-from wasp_backup.command_common import __common_args__, WBackupCommand
+from wasp_backup.command_common import __common_args__, WCreateBackupCommand
 
 
-class WProgramBackupCommand(WBackupCommand):
+class WProgramBackupCommand(WCreateBackupCommand):
 
 	__command__ = 'program-backup'
 
@@ -75,8 +75,4 @@ class WProgramBackupCommand(WBackupCommand):
 			stop_event=self.stop_event()
 		)
 		self.set_archiver(archiver)
-		try:
-			archiver.archive()
-			return self.process_backup_result(archiver, command_arguments)
-		finally:
-			self.set_archiver(None)
+		return self._create_backup(command_arguments)

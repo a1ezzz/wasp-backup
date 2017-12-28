@@ -33,10 +33,10 @@ from wasp_general.command.enhanced import WCommandArgumentDescriptor
 
 from wasp_backup.cipher import WBackupCipher
 from wasp_backup.inside_tar_archiver import WLVMArchiveCreator
-from wasp_backup.command_common import __common_args__, WBackupCommand
+from wasp_backup.command_common import __common_args__, WCreateBackupCommand
 
 
-class WFileBackupCommand(WBackupCommand):
+class WFileBackupCommand(WCreateBackupCommand):
 
 	class SnapshotUsage(Enum):
 		auto = 'auto'
@@ -111,20 +111,15 @@ class WFileBackupCommand(WBackupCommand):
 			compression_mode=compression_mode, sudo=command_arguments['sudo'], cipher=cipher,
 			io_write_rate=io_write_rate, stop_event=self.stop_event()
 		)
-		self.set_archiver(archiver)
 
 		snapshot_disabled = (command_arguments['snapshot'] == WFileBackupCommand.SnapshotUsage.disabled)
 		snapshot_force = (command_arguments['snapshot'] == WFileBackupCommand.SnapshotUsage.forced)
 
-		try:
-			archiver.archive(
-				disable_snapshot=snapshot_disabled,
-				snapshot_force=snapshot_force,
-				snapshot_size=snapshot_size,
-				mount_directory=snapshot_mount_dir
-			)
-
-			return self.process_backup_result(archiver, command_arguments)
-
-		finally:
-			self.set_archiver(None)
+		self.set_archiver(archiver)
+		return self._create_backup(
+			command_arguments,
+			disable_snapshot=snapshot_disabled,
+			snapshot_force=snapshot_force,
+			snapshot_size=snapshot_size,
+			mount_directory=snapshot_mount_dir
+		)
