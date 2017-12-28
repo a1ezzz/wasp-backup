@@ -23,7 +23,7 @@
 # TODO: write tests for the code
 
 # noinspection PyUnresolvedReferences
-from wasp_backup.version import __version__
+from wasp_backup.version import __author__, __version__, __credits__, __license__, __copyright__, __email__
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
