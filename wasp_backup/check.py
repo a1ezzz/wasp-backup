@@ -51,11 +51,6 @@ class WCheckBackupCommand(WBackupCommand):
 		)
 	]
 
-	def stop_event(self, value=None):
-		if value is not None:
-			self.__stop_event = value
-		return self.__stop_event
-
 	def checker(self):
 		return self.__checker
 
@@ -67,7 +62,7 @@ class WCheckBackupCommand(WBackupCommand):
 
 		try:
 			self.__checker = WArchiveIntegrityChecker(
-				archive, self.__logger, stop_event=self.stop_event(), io_read_rate=io_read_rate
+				archive, self.logger(), stop_event=self.stop_event(), io_read_rate=io_read_rate
 			)
 			result, original_hash, calculated_hash = self.__checker.check_archive()
 		finally:
