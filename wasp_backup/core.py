@@ -27,7 +27,10 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
+import json
 from enum import Enum
+
+from wasp_general.network.upload import WUploaderCollection, WFTPUploader
 
 
 class WBackupMeta:
@@ -55,8 +58,8 @@ class WBackupMeta:
 			cipher_algorithm = 'cipher_algorithm'
 
 		__meta_filename__ = 'meta.json'
-		__maximum_meta_filesize__ = 50 * 1024 * 1024
-		__basic_inside_filename__ = 'archive'
+		__maximum_meta_file_size__ = 50 * 1024 * 1024
+		__basic_inside_file_name__ = 'archive'
 		__file_mode__ = int('660', base=8)
 		__hash_generator_name__ = 'MD5'
 
@@ -67,11 +70,21 @@ class WBackupMeta:
 	__scheduler_instance_name__ = 'com.binblob.wasp-backup'
 	__task_source_name__ = 'com.binblob.wasp-backup.scheduler.sources.instant_source'
 
+	__uploader_collection__ = WUploaderCollection(WFTPUploader())
 
-class WArchiverIOMetaProvider:
+
+class WBackupMetaProvider:
 
 	def meta(self):
 		return {}
+
+	def binary_meta(self):
+		result = {}
+		for meta_key, meta_value in self.meta().items():
+			if isinstance(meta_key, WBackupMeta.Archive.MetaOptions) is False:
+				raise TypeError('Invalid meta key spotted')
+			result[meta_key.value] = meta_value
+		return json.dumps(result).encode()
 
 
 class WArchiverIOStatusProvider:

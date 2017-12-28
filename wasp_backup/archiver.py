@@ -40,7 +40,7 @@ from wasp_backup.cipher import WBackupCipher
 from wasp_backup.core import WBackupMeta
 from wasp_backup.io import WMetaTarPatcher, WArchiverThrottlingWriter, WArchiverHashCalculationWriter
 from wasp_backup.io import WArchiverAESCipher, WArchiverThrottlingReader
-from wasp_backup.io import WArchiverWriterChain, WExtractorReaderChain, WArchiverIOMetaProvider, WBasicArchiverIO
+from wasp_backup.io import WArchiverWriterChain, WExtractorReaderChain, WBackupMetaProvider, WBasicArchiverIO
 
 """
 
@@ -66,7 +66,7 @@ archive meta information -------------------------------|     (may be automatic 
 """
 
 
-class WBasicArchiveCreator(WBasicArchiverIO, WArchiverIOMetaProvider):
+class WBasicArchiveCreator(WBasicArchiverIO, WBackupMetaProvider):
 
 	@verify_type('paranoid', archive_path=str, io_write_rate=(float, int, None))
 	@verify_value('paranoid', archive_path=lambda x: len(x) > 0, io_write_rate=lambda x: x is None or x > 0)
@@ -76,7 +76,7 @@ class WBasicArchiveCreator(WBasicArchiverIO, WArchiverIOMetaProvider):
 		cipher=None
 	):
 		WBasicArchiverIO.__init__(self, archive_path, logger, stop_event=stop_event, io_rate=io_write_rate)
-		WArchiverIOMetaProvider.__init__(self)
+		WBackupMetaProvider.__init__(self)
 		self.__compression_mode = compression_mode
 		self.__cipher = cipher
 		self.__writer_chain = None
@@ -98,7 +98,7 @@ class WBasicArchiveCreator(WBasicArchiverIO, WArchiverIOMetaProvider):
 			return self.__writer_chain.status()
 
 	def inside_filename(self):
-		result = WBackupMeta.Archive.__basic_inside_filename__
+		result = WBackupMeta.Archive.__basic_inside_file_name__
 		compression_mode = self.compression_mode()
 		if compression_mode is not None:
 			result += '.' + compression_mode.value
@@ -111,8 +111,7 @@ class WBasicArchiveCreator(WBasicArchiverIO, WArchiverIOMetaProvider):
 			open(self.archive_path(), mode='wb'),
 			WWriterChainLink(WArchiverThrottlingWriter, write_limit=self.io_write_rate()),
 			WWriterChainLink(
-				WMetaTarPatcher, inside_archive_name=inside_archive_name, meta_provider=self,
-				compression_mode=self.compression_mode()
+				WMetaTarPatcher, inside_archive_name, self, compression_mode=self.compression_mode()
 			),
 			WWriterChainLink(WArchiverHashCalculationWriter)
 		]

@@ -71,7 +71,7 @@ class WInsideTarArchiveCreator(WBasicInsideTarArchiveCreator):
 		return self.__last_file
 
 	def inside_filename(self):
-		result = WBackupMeta.Archive.__basic_inside_filename__ + '.tar'
+		result = WBackupMeta.Archive.__basic_inside_file_name__ + '.tar'
 		compression_mode = self.compression_mode()
 		if compression_mode is not None:
 			result += '.' + compression_mode.value

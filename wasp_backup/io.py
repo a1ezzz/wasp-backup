@@ -27,7 +27,6 @@ from wasp_backup.version import __author__, __version__, __credits__, __license_
 # noinspection PyUnresolvedReferences
 from wasp_backup.version import __status__
 
-import json
 import tarfile
 import math
 import io
@@ -46,7 +45,7 @@ from wasp_general.io import WAESWriter, WHashCalculationWriter, WWriterChain, WT
 from wasp_general.io import WReaderChain, WThrottlingReader, WReaderChainLink, WDiscardWriterResult
 from wasp_general.cli.formatter import data_size_formatter
 
-from wasp_backup.core import WBackupMeta, WArchiverIOMetaProvider, WArchiverIOStatusProvider
+from wasp_backup.core import WBackupMeta, WBackupMetaProvider, WArchiverIOStatusProvider
 
 
 class WTarPatcher(io.BufferedWriter):
@@ -207,7 +206,7 @@ class WTarPatcher(io.BufferedWriter):
 
 class WMetaTarPatcher(WTarPatcher):
 
-	def __init__(self, archive_path, inside_archive_name, meta_provider=None, compression_mode=None):
+	def __init__(self, archive_path, inside_archive_name, meta_provider, compression_mode=None):
 		WTarPatcher.__init__(
 			self, archive_path, inside_archive_name, patch_tail=True, compression_mode=compression_mode
 		)
@@ -224,21 +223,19 @@ class WMetaTarPatcher(WTarPatcher):
 		inside_file_size += inside_data_block_delta
 
 		meta_provider = self.meta_provider()
-		meta_data = meta_provider.meta() if meta_provider is not None else {}
-		meta_data = self.process_meta(meta_data)
-		json_data = json.dumps(meta_data).encode()
+		meta_data = meta_provider.binary_meta()
 
-		if len(json_data) > WBackupMeta.Archive.__maximum_meta_filesize__:
+		if len(meta_data) > WBackupMeta.Archive.__maximum_meta_file_size__:
 			raise RuntimeError('Meta data corrupted - too big')
 
-		meta_header = self.tar_header(WBackupMeta.Archive.__meta_filename__, size=len(json_data))
+		meta_header = self.tar_header(WBackupMeta.Archive.__meta_filename__, size=len(meta_data))
 		original_archive.write(meta_header)
 		inside_file_size += len(meta_header)
 
-		original_archive.write(json_data)
-		inside_file_size += len(json_data)
+		original_archive.write(meta_data)
+		inside_file_size += len(meta_data)
 
-		meta_padding = self.block_size(len(json_data)) - len(json_data)
+		meta_padding = self.block_size(len(meta_data)) - len(meta_data)
 		inside_file_size += meta_padding
 		original_archive.write(self.padding(meta_padding))
 
@@ -255,11 +252,11 @@ class WMetaTarPatcher(WTarPatcher):
 		return result
 
 
-class WArchiverHashCalculationWriter(WHashCalculationWriter, WArchiverIOMetaProvider):
+class WArchiverHashCalculationWriter(WHashCalculationWriter, WBackupMetaProvider):
 
 	def __init__(self, raw):
 		WHashCalculationWriter.__init__(self, raw, WBackupMeta.Archive.__hash_generator_name__)
-		WArchiverIOMetaProvider.__init__(self)
+		WBackupMetaProvider.__init__(self)
 
 	def meta(self):
 		return {
@@ -270,22 +267,22 @@ class WArchiverHashCalculationWriter(WHashCalculationWriter, WArchiverIOMetaProv
 		}
 
 
-class WArchiverAESCipher(WAESWriter, WArchiverIOMetaProvider):
+class WArchiverAESCipher(WAESWriter, WBackupMetaProvider):
 
 	def __init__(self, raw, cipher):
 		WAESWriter.__init__(self, raw, cipher.aes_cipher())
-		WArchiverIOMetaProvider.__init__(self)
+		WBackupMetaProvider.__init__(self)
 		self.__meta = cipher.meta()
 
 	def meta(self):
 		return self.__meta
 
 
-class WArchiverThrottlingWriter(WThrottlingWriter, WArchiverIOMetaProvider, WArchiverIOStatusProvider):
+class WArchiverThrottlingWriter(WThrottlingWriter, WBackupMetaProvider, WArchiverIOStatusProvider):
 
 	def __init__(self, raw, write_limit=None):
 		WThrottlingWriter.__init__(self, raw, throttling_to=write_limit)
-		WArchiverIOMetaProvider.__init__(self)
+		WBackupMetaProvider.__init__(self)
 		WArchiverIOStatusProvider.__init__(self)
 
 	def meta(self):
@@ -316,7 +313,7 @@ class WArchiverStatus(metaclass=ABCMeta):
 	def meta(self):
 		result = {}
 		for link in self:
-			if isinstance(link, WArchiverIOMetaProvider) is True:
+			if isinstance(link, WBackupMetaProvider) is True:
 				result.update(link.meta())
 		return result
 
