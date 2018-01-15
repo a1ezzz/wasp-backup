@@ -179,10 +179,12 @@ class WResponsiveRetentionCommand(WResponsiveBrokerCommand):
 	class ScheduledTask(WResponsiveBrokerCommand.ScheduledTask):
 
 		def state_details(self):
+			# TODO: make it more descriptive!
 			return 'Task is running?!'
 
 		def thread_started(self):
-			self.basic_command().stop_event(self.stop_event())
+			# TODO: make it more responsive!
+			#self.basic_command().stop_event(self.stop_event())
 			WResponsiveBrokerCommand.ScheduledTask.thread_started(self)
 
 	__task_source_name__ = WBackupMeta.__task_source_name__
