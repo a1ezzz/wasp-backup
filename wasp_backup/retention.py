@@ -114,6 +114,8 @@ class WRetentionBackupCommand(WBackupCommand):
 			return True
 
 	__command__ = 'retention'
+	__description__ = 'rotate archive backups that resides locally or on a remote location'
+
 	__arguments__ = [
 		WCommandArgumentDescriptor(
 			'backup-location', required=True, multiple_values=False, meta_var='location',

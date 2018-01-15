@@ -38,6 +38,8 @@ from wasp_backup.archiver import WArchiveIntegrityChecker
 class WCheckBackupCommand(WBackupCommand):
 
 	__command__ = 'check'
+	__description__ = 'check backup archive for integrity'
+
 	__arguments__ = [
 		WCommandArgumentDescriptor(
 			'backup-archive', required=True, multiple_values=False, meta_var='archive_path',

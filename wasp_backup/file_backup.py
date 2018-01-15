@@ -44,6 +44,7 @@ class WFileBackupCommand(WCreateBackupCommand):
 		disabled = 'disabled'
 
 	__command__ = 'file-backup'
+	__description__ = 'create backup archive of files and directories'
 
 	__arguments__ = (
 		__common_args__['backup-archive'],

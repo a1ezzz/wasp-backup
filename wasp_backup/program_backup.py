@@ -37,6 +37,7 @@ from wasp_backup.command_common import __common_args__, WCreateBackupCommand
 class WProgramBackupCommand(WCreateBackupCommand):
 
 	__command__ = 'program-backup'
+	__description__ = 'create backup archive of stdout of program'
 
 	__arguments__ = (
 		__common_args__['backup-archive'],
