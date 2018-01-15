@@ -30,6 +30,9 @@ from wasp_backup.version import __status__
 import os
 import tarfile
 import json
+import math
+from time import mktime
+from datetime import datetime
 
 from wasp_general.verify import verify_type, verify_value
 from wasp_general.io import WWriterChainLink, WReaderChainLink, WThrottlingReader, WResponsiveWriter, WResponsiveIO
@@ -82,6 +85,7 @@ class WBasicArchiveCreator(WBasicArchiverIO, WBackupMetaProvider):
 		self.__compression_mode = compression_mode
 		self.__cipher = cipher
 		self.__writer_chain = None
+		self.__last_archive_creation_time = None
 
 	def io_write_rate(self):
 		return self.io_rate()
@@ -132,6 +136,7 @@ class WBasicArchiveCreator(WBasicArchiverIO, WBackupMetaProvider):
 	def archive(self):
 		archive_path = self.archive_path()
 		self.__writer_chain = self.write_chain()
+		self.__last_archive_creation_time = self.__utc_unix_time()
 		archive_instance = self.__writer_chain.instance(WMetaTarPatcher)
 
 		try:
@@ -152,6 +157,12 @@ class WBasicArchiveCreator(WBasicArchiverIO, WBackupMetaProvider):
 			self.logger().error('Unable to create archive "%s". Changes discarded' % archive_path)
 			raise
 
+	@classmethod
+	def __utc_unix_time(cls):
+		utc_datetime = datetime.utcnow()
+		utc_unix_time = mktime(utc_datetime.timetuple())
+		return math.floor(utc_unix_time)
+
 	def write_archive(self, fo, archive):
 		pass
 
@@ -164,7 +175,8 @@ class WBasicArchiveCreator(WBasicArchiverIO, WBackupMetaProvider):
 
 		result.update({
 			WBackupMeta.Archive.MetaOptions.inside_filename: self.inside_filename(),
-			WBackupMeta.Archive.MetaOptions.compression_mode: compression_mode
+			WBackupMeta.Archive.MetaOptions.compression_mode: compression_mode,
+			WBackupMeta.Archive.MetaOptions.creation_time: self.__last_archive_creation_time
 		})
 		return result
 
