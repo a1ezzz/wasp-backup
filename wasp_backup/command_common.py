@@ -29,16 +29,21 @@ from wasp_backup.version import __status__
 
 import os
 import sys
+import shlex
 from datetime import datetime
 import tempfile
 
 from wasp_general.verify import verify_type
+from wasp_general.uri import WURI
+from wasp_general.network.clients.base import WCommonNetworkClientCapability
+from wasp_general.network.clients.collection import __default_client_collection__
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
 from wasp_general.crypto.aes import WAESMode
 from wasp_general.command.result import WPlainCommandResult
 from wasp_general.command.enhanced import WEnhancedCommand
 
 from wasp_backup.core import WBackupMeta, WBackupMetaProvider
+from wasp_backup.notify import notify
 
 
 class WCompressionArgumentHelper(WCommandArgumentDescriptor.ArgumentCastingHelper):
@@ -125,7 +130,7 @@ __common_args__ = {
 	),
 
 	'notify-app': WCommandArgumentDescriptor(
-		'notify-app', meta_var='app_path', help_info='Application that will be called on archive creation'
+		'notify-app', meta_var='app_path', help_info='Application that will be called as a handler'
 	),
 }
 
@@ -136,9 +141,12 @@ class WBackupCommand(WEnhancedCommand):
 	__command__ = None
 
 	__arguments__ = tuple()
+	__relationships__ = None
 
 	def __init__(self, logger):
-		WEnhancedCommand.__init__(self, self.__command__, *self.__arguments__)
+		WEnhancedCommand.__init__(
+			self, self.__command__, *self.__arguments__, relationships=self.__relationships__
+		)
 		self.__logger = logger
 		self.__stop_event = None
 
@@ -196,9 +204,7 @@ class WCreateBackupCommand(WBackupCommand):
 					backup_duration=backup_duration
 				)
 
-			copy_started_at = datetime.utcnow()
-			copy_result = WBackupMeta.__uploader_collection__.upload(copy_to, archiver.archive_path())
-			copy_duration = (datetime.utcnow() - copy_started_at).seconds
+			copy_result, copy_duration = self.__copy(archiver.archive_path(), copy_to)
 
 			if copy_result is True:
 				backup_result = \
@@ -224,6 +230,18 @@ class WCreateBackupCommand(WBackupCommand):
 		finally:
 			self.set_archiver(None)
 
+	def __copy(self, archive_path, copy_to):
+		copy_started_at = datetime.utcnow()
+		uri = WURI.parse(copy_to)
+		dir_name, file_name = os.path.split(uri.path())
+		uri.component(WURI.Component.path, dir_name)
+
+		network_client = __default_client_collection__.open(uri)
+		with open(archive_path, 'rb') as f:
+			copy_result = network_client.request(WCommonNetworkClientCapability.upload_file, file_name, f)
+		copy_duration = (datetime.utcnow() - copy_started_at).total_seconds()
+		return copy_result, copy_duration
+
 	def __handle_backup_result(
 		self, str_result, notify_app=None, backup_duration=None, copy_to=None, copy_complete=None,
 		copy_duration=None
@@ -235,39 +253,16 @@ class WCreateBackupCommand(WBackupCommand):
 		if notify_app is None:
 			return WPlainCommandResult(str_result)
 
-		first_fork_pid = os.fork()
-		if first_fork_pid == 0:
-			second_fork_pid = os.fork()
-			if second_fork_pid == 0:
+		meta_data = archiver.meta()
+		meta_data[WBackupMeta.BackupNotificationOptions.created_archive] = archiver.archive_path()
+		meta_data[WBackupMeta.BackupNotificationOptions.backup_duration] = backup_duration
+		meta_data[WBackupMeta.BackupNotificationOptions.total_archive_size] = os.stat(archiver.archive_path()).st_size
+		meta_data[WBackupMeta.BackupNotificationOptions.copy_to] = copy_to
+		meta_data[WBackupMeta.BackupNotificationOptions.copy_completion] = copy_complete
+		meta_data[WBackupMeta.BackupNotificationOptions.copy_duration] = copy_duration
 
-				meta_data = archiver.meta()
-				meta_data[WBackupMeta.NotificationOptions.created_archive] = archiver.archive_path()
-				meta_data[WBackupMeta.NotificationOptions.backup_duration] = backup_duration
-				meta_data[WBackupMeta.NotificationOptions.total_archive_size] = \
-					os.stat(archiver.archive_path()).st_size
-				meta_data[WBackupMeta.NotificationOptions.copy_to] = copy_to
-				meta_data[WBackupMeta.NotificationOptions.copy_completion] = \
-					copy_complete
-				meta_data[WBackupMeta.NotificationOptions.copy_duration] = copy_duration
-
-				binary_meta = WBackupMetaProvider.encode_meta(
-					meta_data, strict_cls=(
-						WBackupMeta.Archive.MetaOptions,
-						WBackupMeta.NotificationOptions
-					)
-				)
-
-				meta_tempfile = tempfile.NamedTemporaryFile(delete=False)
-				meta_tempfile.write(binary_meta)
-				meta_tempfile.close()
-
-				os.execlp(
-					notify_app,
-					os.path.basename(notify_app),
-					meta_tempfile.name
-				)
-			else:
-				sys.exit(0)
-		else:
-			os.waitpid(first_fork_pid, 0)
+		notify(
+			meta_data, notify_app,
+			encode_strict_cls=(WBackupMeta.Archive.MetaOptions, WBackupMeta.BackupNotificationOptions)
+		)
 		return WPlainCommandResult(str_result)
