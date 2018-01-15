@@ -78,7 +78,7 @@ class WBackupMeta:
 	class RetentionNotificationOptions(Enum):
 		retention_location = 'retention_location'
 		kept_archives = 'kept_archives'
-		removed_archives = 'removes_archives'
+		removed_archives = 'removed_archives'
 
 	class LVMSnapshot:
 		__default_snapshot_size__ = 0.1
