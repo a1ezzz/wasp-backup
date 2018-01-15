@@ -47,8 +47,6 @@ from wasp_backup.notify import notify
 
 class WRetentionBackupCommand(WBackupCommand):
 
-	# TODO: Add retention notification
-
 	class AgeHelper(Enum):
 		name_parsing = 'name-parsing'
 		archive_meta = 'archive-meta'
