@@ -34,6 +34,7 @@ from wasp_general.command.command import WCommandSet, WCommandProto
 from wasp_backup.file_backup import WFileBackupCommand
 from wasp_backup.check import WCheckBackupCommand
 from wasp_backup.program_backup import WProgramBackupCommand
+from wasp_backup.retention import WRetentionBackupCommand
 
 
 if __name__ == '__main__':
@@ -44,5 +45,6 @@ if __name__ == '__main__':
 	command_set.commands().add(WFileBackupCommand(logger))
 	command_set.commands().add(WCheckBackupCommand(logger))
 	command_set.commands().add(WProgramBackupCommand(logger))
+	command_set.commands().add(WRetentionBackupCommand(logger))
 
 	print(command_set.exec(WCommandProto.join_tokens(*(sys.argv[1:]))))
