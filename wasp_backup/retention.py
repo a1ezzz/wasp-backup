@@ -140,6 +140,15 @@ class WRetentionBackupCommand(WBackupCommand):
 		),
 
 		WCommandArgumentDescriptor(
+			'minimum-archives', required=True, multiple_values=False, meta_var='archives_count',
+			help_info='Number of archives that will be kept even if they are expired (the youngest '
+			'archives will be selected).',
+			casting_helper=WCommandArgumentDescriptor.IntegerArgumentCastingHelper(
+				validate_fn=lambda x: x > 0
+			)
+		),
+
+		WCommandArgumentDescriptor(
 			'archive-selection', required=False, multiple_values=False, meta_var='regexp',
 			help_info='regular expression that is used to select archives from the backup location',
 			default_value='^.*$'
@@ -218,9 +227,8 @@ class WRetentionBackupCommand(WBackupCommand):
 		archive_ages = [(x, age_helper(x)) for x in re_selected_archives]
 
 		archive_ages = list(filter(lambda x: (now - x[1]).total_seconds() > 0, archive_ages))  # remove list fn
-		filtered_archives = [x[0] for x in archive_ages]
-
 		archive_ages.sort(key=lambda x: (now - x[1]).total_seconds())
+		sorted_archives = [x[0] for x in archive_ages]
 
 		archive_to_keep = set()
 		for period_keep in command_arguments['period-keep']:
@@ -229,7 +237,19 @@ class WRetentionBackupCommand(WBackupCommand):
 			))
 
 		keep_archives = [x[0] for x in archive_to_keep]
-		files_to_remove = set(filtered_archives).difference(keep_archives)
+
+		extra_archives_required = command_arguments['minimum-archives'] - len(keep_archives)
+		if extra_archives_required > 0:
+			for i in range(len(sorted_archives)):
+				archive_name = sorted_archives[i]
+				if archive_name not in keep_archives:
+					keep_archives.append(archive_name)
+					extra_archives_required -= 1
+
+					if extra_archives_required <= 0:
+						break
+
+		files_to_remove = set(sorted_archives).difference(keep_archives)
 
 		for file_name in files_to_remove:
 			network_client.request(WCommonNetworkClientCapability.remove_file, file_name)
