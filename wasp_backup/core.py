@@ -42,6 +42,7 @@ class WBackupMeta:
 			bzip2 = 'bz2'
 
 		class MetaOptions(Enum):
+			creation_time = 'creation_time'  # unix time of archive creation (for UTC timezone)
 			inside_filename = 'inside_filename'
 			inside_tar = 'inside_tar'
 			archived_files = 'archived_files'
@@ -66,7 +67,7 @@ class WBackupMeta:
 		__file_mode__ = int('660', base=8)
 		__hash_generator_name__ = 'MD5'
 
-	class NotificationOptions(Enum):
+	class BackupNotificationOptions(Enum):
 		created_archive = 'created_archive'
 		backup_duration = 'backup_duration'
 		copy_to = 'copy_to'
@@ -74,12 +75,18 @@ class WBackupMeta:
 		copy_duration = 'copy_duration'
 		total_archive_size = 'total_archive_size'
 
+	class RetentionNotificationOptions(Enum):
+		retention_location = 'retention_location'
+		kept_archives = 'kept_archives'
+		removed_archives = 'removes_archives'
+
 	class LVMSnapshot:
 		__default_snapshot_size__ = 0.1
 		__mount_directory_prefix__ = 'wasp-backup-'
 
 	__scheduler_instance_name__ = 'com.binblob.wasp-backup'
 	__task_source_name__ = 'com.binblob.wasp-backup.scheduler.sources.instant_source'
+	__notification_env_var_name__ = 'WASP_NOTIFICATION_META_FILE'
 
 	__uploader_collection__ = WUploaderCollection(WFTPUploader())
 
