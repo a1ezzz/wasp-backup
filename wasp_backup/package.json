@@ -6,11 +6,11 @@
 	"author_email": "dev@binblob.com",
 	"maintainer": "Ildar Gafurov",
 	"maintainer_email": "dev@binblob.com",
-	"numeric_version": "0.0.3",
+	"numeric_version": "0.0.3.1",
 	"dev_suffix": true,
 	"credits": ["Ildar Gafurov"],
 	"license": "GNU Lesser General Public License v3",
-	"copyright": "Copyright 2016-2018, The Wasp-general",
+	"copyright": "Copyright 2017-2018, The Wasp-backup",
 	"status": "Development",
 	
 	"readme_file": "README.md",
@@ -36,9 +36,6 @@
 			"Topic :: System :: Archiving :: Backup",
 			"Topic :: System :: Archiving :: Compression",
 			"Topic :: Utilities"
-		],
-		"extra_require": {
-			"templates": ["mako"]
-		}
+		]
 	}
 }
