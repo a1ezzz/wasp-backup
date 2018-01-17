@@ -2,7 +2,7 @@
 import os
 from setuptools import setup, find_packages
 
-from wasp_general.version import __package_data__, __license__
+from wasp_backup.version import __package_data__, __license__
 
 
 def read(fname):
