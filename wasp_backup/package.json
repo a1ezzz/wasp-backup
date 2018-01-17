@@ -1,0 +1,44 @@
+{
+	"package": "wasp-backup",
+	"homepage": "https://github.com/a1ezzz/wasp-backup",
+	"brief_description": "File/program backup application",
+	"author": "Ildar Gafurov",
+	"author_email": "dev@binblob.com",
+	"maintainer": "Ildar Gafurov",
+	"maintainer_email": "dev@binblob.com",
+	"numeric_version": "0.0.3",
+	"dev_suffix": true,
+	"credits": ["Ildar Gafurov"],
+	"license": "GNU Lesser General Public License v3",
+	"copyright": "Copyright 2016-2018, The Wasp-general",
+	"status": "Development",
+	
+	"readme_file": "README.md",
+	"scripts": ["wasp-backup.py"],
+	
+	"pypi": {
+		"keywords": ["wasp", "backup", "web", "scheduler"],
+		"classifiers": [
+			"Development Status :: 2 - Pre-Alpha",
+			"Intended Audience :: Developers",
+			"License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+			"Operating System :: OS Independent",
+			"Programming Language :: Python",
+			"Programming Language :: Python :: 3.4",
+			"Programming Language :: Python :: 3.5",
+			"Programming Language :: Python :: 3.6",
+			"Programming Language :: Python :: 3.7",
+			"Programming Language :: Python :: 3 :: Only",
+			"Topic :: Internet",
+			"Topic :: Internet :: WWW/HTTP",
+			"Topic :: System",
+			"Topic :: System :: Archiving",
+			"Topic :: System :: Archiving :: Backup",
+			"Topic :: System :: Archiving :: Compression",
+			"Topic :: Utilities"
+		],
+		"extra_require": {
+			"templates": ["mako"]
+		}
+	}
+}
