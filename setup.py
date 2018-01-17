@@ -2,7 +2,7 @@
 import os
 from setuptools import setup, find_packages
 
-from wasp_backup.version import __package_data__, __license__
+from wasp_backup.version import __package_data__
 
 
 def read(fname):
@@ -21,7 +21,7 @@ if __name__ == "__main__":
 		maintainer=__package_data__['maintainer'],
 		maintainer_email=__package_data__['maintainer_email'],
 		description=__package_data__['brief_description'],
-		license=__license__,
+		license=__package_data__['license'],
 		keywords=__pypi_data__['keywords'],
 		url=__package_data__['homepage'],
 		packages=find_packages(),
