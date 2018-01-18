@@ -29,6 +29,7 @@ import json
 __script_dir__ = os.path.abspath(os.path.dirname(__file__))
 __root_dir__ = os.path.abspath(os.path.join(__script_dir__, '..', '..'))
 __package_json_file_name__ = 'package.json'
+__requirements_file_name__ = 'requirements.txt'
 
 # clone vars
 __exclude_clone_dirs__ = ('extra/build',)
@@ -113,14 +114,68 @@ def find_package_file(source_dir):
 	return result
 
 
-def apply_package_patch(original_package, package_patch):
-	result = original_package.copy()
+def prepare_build_dir(build_dir, package_patch=None):
+	clone_dir(__root_dir__, build_dir)
 
-	if "pypi" in package_patch:
-		result["pypi"].update(package_patch.pop("pypi"))
+	package_json_dir = find_package_file(build_dir)
+	with open(os.path.join(package_json_dir, __package_json_file_name__), 'r') as f:
+		package_json = json.load(f)
 
-	result.update(package_patch)
-	return result
+	if package_patch is not None:
+
+		with open(package_patch, 'r') as f:
+			json_patch = json.load(f)
+
+		# removing original hardlink and creating ordinary file
+		build_package_json = os.path.join(package_json_dir, __package_json_file_name__)
+		print('Unlinking package json: %s' % build_package_json)
+		os.unlink(build_package_json)
+
+		if "pypi" in json_patch:
+			package_json["pypi"].update(json_patch.pop("pypi"))
+		package_json.update(json_patch)
+
+		with open(build_package_json, 'w') as f:
+			f.write(json.dumps(package_json))
+
+	if 'exclude_requirements' in package_json['pypi'] and len(package_json['pypi']['exclude_requirements']) > 0:
+		with open(os.path.join(__root_dir__, __requirements_file_name__), mode='r') as f:
+			requirements = set(f.read().splitlines())
+
+		# removing original hardlink and creating ordinary file
+		build_requirements_file = os.path.join(build_dir, __requirements_file_name__)
+		print('Unlinking requirementx.txt: %s' % build_requirements_file)
+		os.unlink(build_requirements_file)
+
+		exclude_requirements = set(package_json['pypi']['exclude_requirements']).intersection(requirements)
+		if len(exclude_requirements) > 0:
+			with open(os.path.join(build_requirements_file), mode='w') as f:
+				f.write('\n'.join(requirements.difference(exclude_requirements)))
+
+	file_filters_re = package_json['pypi']['exclude_files_re'] if 'exclude_files_re' in package_json['pypi'] else []
+	dir_filters_re = package_json['pypi']['exclude_dirs_re'] if 'exclude_dirs_re' in package_json['pypi'] else []
+
+	if len(file_filters_re) > 0 or len(dir_filters_re) > 0:
+		file_filters_re = [re.compile(x) for x in file_filters_re]
+		dir_filters_re = [re.compile(x) for x in dir_filters_re]
+
+		for root, dirs, files in os.walk(build_dir):
+
+			if len(files) > 0 and len(file_filters_re) > 0:
+				for file_name in files:
+					for filter_re in file_filters_re:
+						if filter_re.match(file_name) is not None:
+							file_path = os.path.join(build_dir, root, file_name)
+							print('Removing excluded file: %s' % file_path)
+							os.unlink(file_path)
+
+			if len(dirs) > 0 and len(dir_filters_re) > 0:
+				for dir_name in dirs:
+					for filter_re in dir_filters_re:
+						if filter_re.match(dir_name) is not None:
+							dir_path = os.path.join(build_dir, root, dir_name)
+							print('Removing excluded directory: %s' % dir_path)
+							shutil.rmtree(dir_path)
 
 
 if __name__ == '__main__':
@@ -148,6 +203,12 @@ if __name__ == '__main__':
 		'--clone-clear-target', help='whether to recreate target directory before cloning', action='store_true'
 	)
 
+	# common build args
+	parser.add_argument(
+		'--apply-package-patch', type=str, metavar='json_file',
+		help='package json-file to be applied to current project json-file'
+	)
+
 	# pypi build args
 	action_group.add_argument(
 		'--pypi-build', help='build and upload sources to the pypi', action='store_true'
@@ -163,10 +224,6 @@ if __name__ == '__main__':
 	parser.add_argument(
 		'--pypi-repo', type=str, metavar='repo_name',
 		help='pypi repository for publishing (may have value: %s)' % ', '.join(__pypi_suggested_repo__)
-	)
-	parser.add_argument(
-		'--pypi-package-patch', type=str, metavar='json_file',
-		help='package json-file to be applied to current project json-file'
 	)
 
 	# debian build args
@@ -206,22 +263,7 @@ if __name__ == '__main__':
 
 		clear_build_dirs(__pypi_build_dir_name__)
 		os.mkdir(__pypi_build_dir__)
-		clone_dir(__root_dir__, __pypi_build_dir__)
-
-		if args.pypi_package_patch is not None:
-			with open(args.pypi_package_patch, 'r') as f:
-				json_patch = json.load(f)
-
-			package_json_dir = find_package_file(__pypi_build_dir__)
-			with open(os.path.join(package_json_dir, __package_json_file_name__), 'r') as f:
-				source_json_data = json.load(f)
-
-			# removing original hardlink and creating ordinary file
-			os.unlink(os.path.join(package_json_dir, __package_json_file_name__))
-
-			with open(os.path.join(package_json_dir, __package_json_file_name__), 'w') as f:
-				f.write(json.dumps(apply_package_patch(source_json_data, json_patch)))
-
+		prepare_build_dir(__pypi_build_dir__, package_patch=args.apply_package_patch)
 		os.chdir(__pypi_build_dir__)
 
 		if args.pypi_commands is not None:
@@ -237,8 +279,8 @@ if __name__ == '__main__':
 
 	elif args.debian_build is True:
 		clear_build_dirs(__debian_build_dir_name__)
-		os.mkdir(__debian_build_dir__)
-		clone_dir(__root_dir__, __debian_build_dir__)
+		os.mkdir(__debian_pkg_dir__)
+		prepare_build_dir(__debian_pkg_dir__, package_patch=args.apply_package_patch)
 		clone_dir(__debian_pkg_dir__, os.path.join(__debian_build_dir__, 'debian'))
 		os.chdir(__debian_build_dir__)
 		assert (os.system('dpkg-buildpackage') == 0)
@@ -254,15 +296,15 @@ if __name__ == '__main__':
 		os.chdir(__centos_build_dir__)
 
 		for spec_file in os.listdir(__centos_pkg_dir__):
-			file_name = __centos_spec_file_re__.search(spec_file).group(1)
-			file_name += __centos_package_version_suffix__
+			centos_package_name = __centos_spec_file_re__.search(spec_file).group(1)
+			centos_package_name += __centos_package_version_suffix__
 
 			packaging_dir = os.path.join(__centos_build_dir__, 'PACKAGING')
-			sources_dir = os.path.join(packaging_dir, file_name)
+			sources_dir = os.path.join(packaging_dir, centos_package_name)
 
 			clear_build_dirs(sources_dir)
 			os.mkdir(sources_dir)
-			clone_dir(__root_dir__, sources_dir)
+			prepare_build_dir(sources_dir, package_patch=args.apply_package_patch)
 
 			sources_archive = os.path.join(__centos_build_dir__, 'SOURCES', __centos_package_file__)
 			assert(os.system('tar czvf %s -C %s .' % (sources_archive, packaging_dir)) == 0)
