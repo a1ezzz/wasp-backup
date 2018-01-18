@@ -1,0 +1,8 @@
+{
+	"package": "wasp-backup-minimal",
+
+	"pypi": {
+		"exclude_files_re": ["^apps.py$"],
+		"exclude_requirements": ["wasp-launcher"]
+	}
+}

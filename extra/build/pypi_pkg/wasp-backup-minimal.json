@@ -1,7 +1,0 @@
-{
-	"package": "wasp-backup-minimal",
-
-	"pypi": {
-		"exclude_requirements": []
-	}
-}
