@@ -17,6 +17,7 @@
 	"scripts": ["wasp-backup.py"],
 	
 	"pypi": {
+		"exclude_dirs_re": ["^__pycache__$"],
 		"keywords": ["wasp", "backup", "web", "scheduler"],
 		"classifiers": [
 			"Development Status :: 2 - Pre-Alpha",
