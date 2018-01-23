@@ -71,7 +71,7 @@ class WRetentionBackupCommand(WBackupCommand):
 			elif period_modifier == 'm':
 
 				def reduce_fn():
-					year = self.__from_dt.year()
+					year = self.__from_dt.year
 					if self.__from_dt.month == 1:
 						year -= 1
 						month = 12
