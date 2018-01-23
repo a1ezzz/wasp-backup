@@ -55,8 +55,9 @@ class WRetentionBackupCommand(WBackupCommand):
 
 	class PeriodKeepFilter:
 
-		def __init__(self, from_dt, period_value, period_modifier, archive_number):
+		def __init__(self, from_dt, tz, period_value, period_modifier, archive_number):
 			self.__from_dt = from_dt
+			self.__tz = tz
 			self.__reduce_fn = None
 
 			if period_modifier in ['M', 'H', 'd', 'w']:
@@ -82,7 +83,7 @@ class WRetentionBackupCommand(WBackupCommand):
 						year=year, month=month, day=self.__from_dt.day,
 						hour=self.__from_dt.hour, minute=self.__from_dt.minute,
 						second=self.__from_dt.second, microsecond=self.__from_dt.microsecond
-					)
+					).replace(tzinfo=self.__tz)
 				self.__reduce_fn = reduce_fn
 			elif period_modifier == 'y':
 				self.__reduce_fn = lambda: datetime(
@@ -90,7 +91,7 @@ class WRetentionBackupCommand(WBackupCommand):
 					day=self.__from_dt.day, hour=self.__from_dt.hour,
 					minute=self.__from_dt.minute, second=self.__from_dt.second,
 					microsecond=self.__from_dt.microsecond
-				)
+				).replace(tzinfo=self.__tz)
 			else:
 				raise ValueError('Unknown period_modifier was specified')
 
@@ -235,7 +236,7 @@ class WRetentionBackupCommand(WBackupCommand):
 		archive_to_keep = set()
 		for period_keep in command_arguments['period-keep']:
 			archive_to_keep.update(filter(
-				WRetentionBackupCommand.PeriodKeepFilter(now, *period_keep), archive_ages
+				WRetentionBackupCommand.PeriodKeepFilter(now, tz, *period_keep), archive_ages
 			))
 
 		keep_archives = [x[0] for x in archive_to_keep]
