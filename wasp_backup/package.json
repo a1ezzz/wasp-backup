@@ -6,7 +6,7 @@
 	"author_email": "dev@binblob.com",
 	"maintainer": "Ildar Gafurov",
 	"maintainer_email": "dev@binblob.com",
-	"numeric_version": "0.0.3.1",
+	"numeric_version": "0.0.3.2",
 	"dev_suffix": true,
 	"credits": ["Ildar Gafurov"],
 	"license": "GNU Lesser General Public License v3",
