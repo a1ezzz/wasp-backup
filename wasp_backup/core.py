@@ -30,8 +30,6 @@ from wasp_backup.version import __status__
 import json
 from enum import Enum
 
-from wasp_general.network.upload import WUploaderCollection, WFTPUploader
-
 
 class WBackupMeta:
 
@@ -87,8 +85,6 @@ class WBackupMeta:
 	__scheduler_instance_name__ = 'com.binblob.wasp-backup'
 	__task_source_name__ = 'com.binblob.wasp-backup.scheduler.sources.instant_source'
 	__notification_env_var_name__ = 'WASP_NOTIFICATION_META_FILE'
-
-	__uploader_collection__ = WUploaderCollection(WFTPUploader())
 
 
 class WBackupMetaProvider:
