@@ -35,6 +35,7 @@ import tempfile
 
 from wasp_general.verify import verify_type
 from wasp_general.uri import WURI
+from wasp_general.network.clients.proto import WNetworkClientProto
 from wasp_general.network.clients.base import WCommonNetworkClientCapability
 from wasp_general.network.clients.collection import __default_client_collection__
 from wasp_general.command.enhanced import WCommandArgumentDescriptor
@@ -231,16 +232,21 @@ class WCreateBackupCommand(WBackupCommand):
 			self.set_archiver(None)
 
 	def __copy(self, archive_path, copy_to):
-		copy_started_at = datetime.utcnow()
-		uri = WURI.parse(copy_to)
-		dir_name, file_name = os.path.split(uri.path())
-		uri.component(WURI.Component.path, dir_name)
+		try:
+			copy_started_at = datetime.utcnow()
+			uri = WURI.parse(copy_to)
+			if uri.path() is not None:
+				dir_name, file_name = os.path.split(uri.path())
+				uri.component(WURI.Component.path, dir_name)
 
-		network_client = __default_client_collection__.open(uri)
-		with open(archive_path, 'rb') as f:
-			copy_result = network_client.request(WCommonNetworkClientCapability.upload_file, file_name, f)
-		copy_duration = (datetime.utcnow() - copy_started_at).total_seconds()
-		return copy_result, copy_duration
+				network_client = __default_client_collection__.open(uri)
+				with open(archive_path, 'rb') as f:
+					copy_result = network_client.request(WCommonNetworkClientCapability.upload_file, file_name, f)
+				copy_duration = (datetime.utcnow() - copy_started_at).total_seconds()
+				return copy_result, copy_duration
+		except WNetworkClientProto.ConnectionError:
+			pass
+		return False, -1
 
 	def __handle_backup_result(
 		self, str_result, notify_app=None, backup_duration=None, copy_to=None, copy_complete=None,
