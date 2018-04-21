@@ -2,7 +2,7 @@ pytest
 pytest-cov
 pytest-pep8
 pytest-html
-sphinx
+sphinx<1.7
 recommonmark
 sphinxcontrib-plantuml
 twine
