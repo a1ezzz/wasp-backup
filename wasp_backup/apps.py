@@ -233,7 +233,6 @@ class WBackupSchedulerInstaller(WSchedulerTaskSourceInstaller):
 		def description(self):
 			return 'Backup tasks from broker'
 
-
 	__registry_tag__ = 'com.binblob.wasp-backup.scheduler.sources'
 
 	def sources(self):

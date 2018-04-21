@@ -123,8 +123,8 @@ class WLVMArchiveCreator(WInsideTarArchiveCreator):
 	def sudo(self):
 		return self.__sudo
 
-	@verify_type(disable_snapshot=bool, snapshot_force=bool, snapshot_size=(int, float, None), mount_directory=(str, None))
-	@verify_type(mount_fs=(str, None), mount_options=(list, tuple, set, None))
+	@verify_type(disable_snapshot=bool, snapshot_force=bool, snapshot_size=(int, float, None))
+	@verify_type(mount_directory=(str, None), mount_fs=(str, None), mount_options=(list, tuple, set, None))
 	def archive(
 		self, disable_snapshot=False, snapshot_force=False, snapshot_size=None, mount_directory=None,
 		mount_fs=None, mount_options=None
