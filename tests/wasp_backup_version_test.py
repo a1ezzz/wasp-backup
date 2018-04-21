@@ -1,23 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import pytest
-import os
-from tempfile import mkdtemp
-
-from wasp_backup.version import revision
+from wasp_backup.version import package_version
 
 
-@pytest.fixture()
-def cwd(request):
-	curdir = os.getcwd()
-
-	def fin():
-		os.chdir(curdir)
-	request.addfinalizer(fin)
-
-
-@pytest.mark.usefixtures('cwd')
-def test_revision(tmpdir):
-	revision()
-	os.chdir(tmpdir.strpath)
-	assert(revision() == '--')
+def test_version():
+	assert(isinstance(package_version(), str) is True)
+	assert(len(package_version()) > 0)
