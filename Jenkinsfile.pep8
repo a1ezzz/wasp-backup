@@ -1,0 +1,19 @@
+node {
+	ansiColor('xterm') {
+		stage('Preparing environment'){
+			sh 'rm -rf ~/virtualenv-wasp-backup-pep8/'
+			sh 'virtualenv -p /usr/bin/python3 ~/virtualenv-wasp-backup-pep8/'
+		}
+
+		stage('Installing package and requirements'){
+			checkout scm
+			sh '~/virtualenv-wasp-backup-pep8/bin/pip install -r requirements.txt'
+			sh '~/virtualenv-wasp-backup-pep8/bin/pip install -r dev-requirements.txt'
+			sh '~/virtualenv-wasp-backup-pep8/bin/pip install .'
+		}
+
+		stage('Running py.test'){
+			sh 'cd tests; ~/virtualenv-wasp-backup-pep8/bin/py.test -c pytest-pep8.ini'
+		}
+	}
+}
